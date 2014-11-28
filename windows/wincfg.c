@@ -11,7 +11,7 @@
 #include "storage.h"
 
 #ifdef PERSOPORT
-#include "kitty.h"
+#include "../../kitty.h"
 int get_param( const char * val ) ;
 char * get_param_str( const char * val ) ;
 #if (defined IMAGEPORT) && (!defined FDJ)

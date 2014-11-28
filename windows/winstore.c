@@ -34,7 +34,7 @@ static const char *const puttystr = PUTTY_REG_POS "\\Sessions";
 static const char hex[16] = "0123456789ABCDEF";
 
 #ifdef PERSOPORT
-#include "kitty_commun.h"
+#include "../../kitty_commun.h"
 #ifndef SAVEMODE_REG
 #define SAVEMODE_REG 0
 #endif

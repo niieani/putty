@@ -49,9 +49,9 @@ extern Conf *conf;		       /* defined in window.c */
 #ifdef PERSOPORT
 #include <math.h>
 #include <process.h>
-#include "kitty.h"
-#include "kitty_commun.h"
-#include "kitty_registry.h"
+#include "../../kitty.h"
+#include "../../kitty_commun.h"
+#include "../../kitty_registry.h"
 
 extern char BuildVersionTime[256] ;
 

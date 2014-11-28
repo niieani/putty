@@ -18,7 +18,7 @@ void sc_conf_filesel_handler11(union control *ctrl, void *dlg, void *data, int e
 int cygterm_get_flag( void ) ;
 #endif
 #ifdef PERSOPORT
-#include "kitty.h"
+#include "../../kitty.h"
 union control * ctrlHostnameEdit = NULL ;
 void MASKPASS( char * password ) ;
 #endif
@@ -622,7 +622,7 @@ static void sshbug_handler(union control *ctrl, void *dlg,
 }
 
 #ifdef PERSOPORT
-#include "kitty.h"
+#include "../../kitty.h"
 int dlg_listbox_get(union control *ctrl, void *dlg, int index, char * pstr, int maxcount) ;
 int dlg_listbox_gettext(union control *ctrl, void *dlg, int index, char * pstr, int maxcount) ;
 

@@ -12,7 +12,7 @@
 #include "ssh.h"
 
 #ifdef PERSOPORT
-#include "kitty_commun.h"
+#include "../../kitty_commun.h"
 #endif
 
 int console_batch_mode = FALSE;
