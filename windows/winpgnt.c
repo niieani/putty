@@ -41,7 +41,9 @@ extern int DirectoryBrowseFlag ;
 #endif
 #endif
 
+#ifndef IDI_MAINICON
 #define IDI_MAINICON 200
+#endif
 #define IDI_TRAYICON 201
 
 #define WM_SYSTRAY   (WM_APP + 6)
