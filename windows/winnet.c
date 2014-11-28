@@ -1886,17 +1886,17 @@ int select_result(WPARAM wParam, LPARAM lParam)
 #if (defined ZMODEMPORT) && (defined WITH_ZMODEM)
 	    } 
 		if(get_param("ZMODEM")) {
-			if (!s->closing && plug_accepting(s->plug, (void*)t)) {
+			if (!s->closing && plug_accepting(s->plug, sk_tcp_accept, actx)) {
 			p_closesocket(t);      /* denied or error */
 		}
 	    }
 	else {
-		if (plug_accepting(s->plug, (void*)t)) {
+		if (plug_accepting(s->plug, sk_tcp_accept, actx)) {
 		p_closesocket(t);      /* denied or error */
 		}
 	    }
 #else
-	    } else if (plug_accepting(s->plug, (void*)t)) {
+	    } else if (plug_accepting(s->plug, sk_tcp_accept, actx)) {
 		p_closesocket(t);      /* denied or error */
 	    }
 #endif
@@ -1961,116 +1961,6 @@ void netscheduler_free(struct netscheduler_tag* netscheduler)
     sfree(netscheduler);
 }
 #endif
-
-/*
- * Deal with socket errors detected in try_send().
- */
-void net_pending_errors(void)
-{
-    int i;
-#if (defined ZMODEMPORT) && (defined WITH_ZMODEM)
-	int nextpass;
-#endif
-    Actual_Socket s;
-
-    /*
-     * This might be a fiddly business, because it's just possible
-     * that handling a pending error on one socket might cause
-     * others to be closed. (I can't think of any reason this might
-     * happen in current SSH implementation, but to maintain
-     * generality of this network layer I'll assume the worst.)
-     * 
-     * So what we'll do is search the socket list for _one_ socket
-     * with a pending error, and then handle it, and then search
-     * the list again _from the beginning_. Repeat until we make a
-     * pass with no socket errors present. That way we are
-     * protected against the socket list changing under our feet.
-     */
-#if (defined ZMODEMPORT) && (defined WITH_ZMODEM)
-    if( get_param("ZMODEM") ) {
-	nextpass = curpass+1;
-	if (nextpass == 0) { nextpass = 1; }
-
-    do {
-	for (i = 0; (s = index234(sktree, i)) != NULL; i++) {
-	    if (s->pending_error) {
-		/*
-		 * An error has occurred on this socket. Pass it to the
-		 * plug.
-		 */
-
-	if (!s->closing) {
-				plug_closing(s->plug,
-			     winsock_error_string(s->pending_error),
-			     s->pending_error, 0);
-			break;
-			}
-	    }
-		/* now checks if we need to cleanup this socket */
-		if (s->closing == curpass) {
-			s->closing = nextpass;
-			if (s->pending_error != 0 || bufchain_size(&s->output_data) == 0) { /* errors or no buffer means we can close the socket */
-					sk_tcp_really_close(s);
-			} else { // otherwise, keep trying sending the data
-				try_send(s);
-			}
-
-			break;
-	    }
-
-	}
-	} while (s);
-	curpass = nextpass;
-   }
-else {
-    do {
-	for (i = 0; (s = index234(sktree, i)) != NULL; i++) {
-	    if (s->pending_error) {
-		/*
-		 * An error has occurred on this socket. Pass it to the
-		 * plug.
-		 */
-		plug_closing(s->plug,
-			     winsock_error_string(s->pending_error),
-			     s->pending_error, 0);
-		break;
-	    }
-	}
-    } while (s);
-}
-#else
-    do {
-	for (i = 0; (s = index234(sktree, i)) != NULL; i++) {
-	    if (s->pending_error) {
-		/*
-		 * An error has occurred on this socket. Pass it to the
-		 * plug.
-		 */
-		plug_closing(s->plug,
-			     winsock_error_string(s->pending_error),
-			     s->pending_error, 0);
-		break;
-	    }
-	}
-    } while (s);
-#endif
-}
-
-/*
- * Each socket abstraction contains a `void *' private field in
- * which the client can keep state.
- */
-static void sk_tcp_set_private_ptr(Socket sock, void *ptr)
-{
-    Actual_Socket s = (Actual_Socket) sock;
-    s->private_ptr = ptr;
-}
-
-static void *sk_tcp_get_private_ptr(Socket sock)
-{
-    Actual_Socket s = (Actual_Socket) sock;
-    return s->private_ptr;
-}
 
 /*
  * Special error values are returned from sk_namelookup and sk_new

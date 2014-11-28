@@ -1505,12 +1505,6 @@ ManagePortKnocking(conf_get_str(conf,CONF_host),conf_get_str(conf,CONF_portknock
 	if ((unsigned)(n - WAIT_OBJECT_0) < (unsigned)nhandles) {
 	    handle_got_event(handles[n - WAIT_OBJECT_0]);
 	    sfree(handles);
-	    if (must_close_session)
-#ifdef PERSOPORT
-		{ close_session(); must_close_session = FALSE; }
-#else
-		close_session();
-#endif
 #ifdef ZMODEMPORT
 	     if( GetZModemFlag() ) continue;
 #endif
@@ -1523,32 +1517,14 @@ ManagePortKnocking(conf_get_str(conf,CONF_host),conf_get_str(conf,CONF_portknock
 
 	    if (!(IsWindow(logbox) && IsDialogMessage(logbox, &msg)))
 		DispatchMessage(&msg);
-	    /* Send the paste buffer if there's anything to send */
-	    term_paste(term);
 #ifdef ZMODEMPORT
 	    	    if( GetZModemFlag() && xyz_Process(back, backhandle, term))
 		    continue;
 #endif
-	    /* If there's nothing new in the queue then we can do everything
-	     * we've delayed, reading the socket, writing, and repainting
-	     * the window.
-	     */
-	    if (must_close_session)
-#ifdef PERSOPORT
-		{ close_session(); must_close_session = FALSE; }
-#else
-		close_session();
-#endif
 	}
 
-	/* The messages seem unreliable; especially if we're being tricky */
-	term_set_focus(term, GetForegroundWindow() == hwnd);
-
-	if (pending_netevent)
-	    enact_pending_netevent();
-
-	net_pending_errors();
-    }
+	run_toplevel_callbacks();
+	}
 
     finished:
 #ifdef ZMODEMPORT
@@ -1879,17 +1855,9 @@ void cmdline_error(char *fmt, ...)
  */
 static void wm_netevent_callback(void *vctx)
 {
-    static int reentering = 0;
-    extern int select_result(WPARAM, LPARAM);
-
-    if (reentering)
-	return;			       /* don't unpend the pending */
-
-    pending_netevent = FALSE;
-
-    reentering = 1;
-    select_result(pend_netevent_wParam, pend_netevent_lParam);
-    reentering = 0;
+	struct wm_netevent_params *params = (struct wm_netevent_params *)vctx;
+	select_result(params->wParam, params->lParam);
+	sfree(vctx);
 }
 
 /*
@@ -3474,7 +3442,7 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 
 		InvalidateRect(hwnd, NULL, TRUE);
 		reset_window(init_lvl);
-		net_pending_errors();
+
 #ifdef PERSOPORT
 		if( GetIconeFlag() != -1 )
 			SetNewIcon( hwnd, conf_get_filename(conf,CONF_iconefile)->path, conf_get_int(conf,CONF_icone), SI_INIT ) ;
@@ -4706,11 +4674,6 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 		}
 	    }
 	}
-#ifdef KEYMAPPINGPORT
-	if( PuttyFlag ) net_pending_errors();
-#else
-	net_pending_errors();
-#endif
 	return 0;
       case WM_INPUTLANGCHANGE:
 	/* wParam == Font number */

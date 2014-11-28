@@ -208,9 +208,9 @@ void agent_schedule_callback(void (*callback)(void *, void *, int),
 static void usage(void)
 {
 #if (defined PERSOPORT) && (!defined FDJ)
-    printf("KiTTY Link: command-line connection utility\n");
+    printf("Klink: command-line connection utility\n");
 #else
-    printf("PuTTY Link: command-line connection utility\n");
+    printf("Plink: command-line connection utility\n");
 #endif
     printf("%s\n", ver);
     printf("Usage: plink [options] [user@]host [command]\n");
@@ -334,6 +334,9 @@ void stdouterr_sent(struct handle *h, int new_backlog)
 				      handle_backlog(stderr_handle)));
     }
 }
+
+const int share_can_be_downstream = TRUE;
+const int share_can_be_upstream = TRUE;
 
 #ifdef PERSOPORT
 char * AutoCommand = NULL ;

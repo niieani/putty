@@ -3211,7 +3211,7 @@ static void ssh_gotdata(Ssh ssh, unsigned char *data, int datalen)
     /* Log raw data, if we're in that mode. */
     if (ssh->logctx)
 	log_packet(ssh->logctx, PKT_INCOMING, -1, NULL, data, datalen,
-		   0, NULL, NULL);
+		   0, NULL, NULL, 0, NULL);
 
     crBegin(ssh->ssh_gotdata_crstate);
 
@@ -8799,6 +8799,7 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
     
     s->done_service_req = FALSE;
     s->we_are_in = s->userauth_success = FALSE;
+	s->agent_response = NULL;
 #ifndef NO_GSSAPI
     s->tried_gssapi = FALSE;
 #endif
@@ -10127,7 +10128,6 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 							/* service requested */
 		ssh2_pkt_addstring(s->pktout, "password");
 		ssh2_pkt_addbool(s->pktout, FALSE);
-		dont_log_password(ssh, s->pktout, PKTLOG_BLANK);
 #ifdef PERSOPORT
 		if( strcmp( conf_get_str(ssh->conf,CONF_password), "" ) ) {
 			char bufpass[128] ;
@@ -10172,7 +10172,6 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 #else
 		ssh2_pkt_addstring(s->pktout, s->password);
 #endif
-		end_log_omission(ssh, s->pktout);
 		ssh2_pkt_send_with_padding(ssh, s->pktout, 256);
 		logevent("Sent password");
 		s->type = AUTH_TYPE_PASSWORD;

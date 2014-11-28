@@ -671,6 +671,10 @@ void save_open_settings(void *sesskey, Conf *conf)
     write_setting_i(sesskey, "SerialParity", conf_get_int(conf, CONF_serparity));
     write_setting_i(sesskey, "SerialFlowControl", conf_get_int(conf, CONF_serflow));
     write_setting_s(sesskey, "WindowClass", conf_get_str(conf, CONF_winclass));
+	write_setting_i(sesskey, "ConnectionSharing", conf_get_int(conf, CONF_ssh_connection_sharing));
+	write_setting_i(sesskey, "ConnectionSharingUpstream", conf_get_int(conf, CONF_ssh_connection_sharing_upstream));
+	write_setting_i(sesskey, "ConnectionSharingDownstream", conf_get_int(conf, CONF_ssh_connection_sharing_downstream));
+	wmap(sesskey, "SSHManualHostKeys", conf, CONF_ssh_manual_hostkeys, FALSE);
 #ifdef SCPORT
     write_setting_i(sesskey, "PKCS11SysLog", conf_get_int(conf,CONF_try_write_syslog) );
     write_setting_i(sesskey, "AuthPKCS11", conf_get_int(conf,CONF_try_pkcs11_auth) /*cfg->try_pkcs11_auth*/);
@@ -1065,7 +1069,7 @@ void load_open_settings(void *sesskey, Conf *conf)
     gppi(sesskey, "TryPalette", 0, conf, CONF_try_palette);
     gppi(sesskey, "ANSIColour", 1, conf, CONF_ansi_colour);
     gppi(sesskey, "Xterm256Colour", 1, conf, CONF_xterm_256_colour);
-    i = gppi_raw(sesskey, "BoldAsColour", 0); conf_set_int(conf, CONF_bold_style, i+1);
+    i = gppi_raw(sesskey, "BoldAsColour", 1); conf_set_int(conf, CONF_bold_style, i+1);
 #ifdef TUTTYPORT
     gppi(sesskey, "WindowClosable", 1, conf, CONF_window_closable);
     gppi(sesskey, "WindowMinimizable", 1, conf, CONF_window_minimizable);
@@ -1198,6 +1202,10 @@ void load_open_settings(void *sesskey, Conf *conf)
     gppi(sesskey, "SerialParity", SER_PAR_NONE, conf, CONF_serparity);
     gppi(sesskey, "SerialFlowControl", SER_FLOW_XONXOFF, conf, CONF_serflow);
     gpps(sesskey, "WindowClass", "", conf, CONF_winclass);
+	gppi(sesskey, "ConnectionSharing", 0, conf, CONF_ssh_connection_sharing);
+	gppi(sesskey, "ConnectionSharingUpstream", 1, conf, CONF_ssh_connection_sharing_upstream);
+	gppi(sesskey, "ConnectionSharingDownstream", 1, conf, CONF_ssh_connection_sharing_downstream);
+	gppmap(sesskey, "SSHManualHostKeys", conf, CONF_ssh_manual_hostkeys);
 #ifdef SCPORT
     gppi(sesskey, "PKCS11SysLog", 0, conf, CONF_try_write_syslog );
     gppi(sesskey, "AuthPKCS11", 0, conf, CONF_try_pkcs11_auth /*&cfg->try_pkcs11_auth*/);

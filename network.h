@@ -139,8 +139,6 @@ Socket sk_new(SockAddr addr, int port, int privport, int oobinline,
 
 Socket sk_newlistener(char *srcaddr, int port, Plug plug, int local_host_only, int address_family);
 
-Socket sk_register(OSSocket sock, Plug plug);
-
 #ifdef CYGTERMPORT
 int sk_getport(Socket s);
 #endif

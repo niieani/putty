@@ -11,8 +11,6 @@
 
 #include "win_res.h"
 
-IDI_MAINICON ICON "putty.ico"
-
 #ifdef PERSOPORT
 
 IDI_FILEASSOC ICON "../../res/file_assoc/kitty_assoc.ico"

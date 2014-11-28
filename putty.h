@@ -1173,8 +1173,10 @@ void term_update(Terminal *);
 void term_invalidate(Terminal *);
 void term_blink(Terminal *, int set_cursor);
 void term_do_paste(Terminal *);
+// this was in kitty
 int term_paste_pending(Terminal *);
 void term_paste(Terminal *);
+// end here
 void term_nopaste(Terminal *);
 int term_ldisc(Terminal *, int option);
 void term_copyall(Terminal *);
@@ -1648,6 +1650,8 @@ void request_callback_notifications(toplevel_callback_notify_fn_t notify,
 #define HIGH_SURROGATE_END 0xdbff
 #define LOW_SURROGATE_START 0xdc00
 #define LOW_SURROGATE_END 0xdfff
+#endif
+
 
 /* These macros exist in the Windows API, so the environment may
  * provide them. If not, define them in terms of the above. */
