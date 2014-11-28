@@ -167,7 +167,7 @@ static void logwrite(struct LogContext *ctx, void *data, int len)
 #ifdef PERSOPORT
 	if( !get_param("PUTTY") ) {
 		if( timestamp_newline ) { log_writetimestamp( ctx ) ; timestamp_newline = 0 ; }
-		char * c = (char*)(data+len-1) ;
+		char * c = (char*)(&data+len-1) ;
 		if( c[0]=='\n' ) timestamp_newline = 1 ;
 	}
 #endif
