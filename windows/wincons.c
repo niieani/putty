@@ -11,6 +11,10 @@
 #include "storage.h"
 #include "ssh.h"
 
+#ifdef PERSOPORT
+#include "kitty_commun.h"
+#endif
+
 int console_batch_mode = FALSE;
 
 static void *console_logctx = NULL;
@@ -113,7 +117,11 @@ int verify_ssh_host_key(void *frontend, char *host, int port, char *keytype,
 
     if (ret == 0)		       /* success - key matched OK */
 	return 1;
-
+    
+#ifdef PERSOPORT
+	if( GetAutoStoreSSHKeyFlag() ) { strcpy(line,"y") ; }
+	else {
+#endif
     if (ret == 2) {		       /* key was different */
 	if (console_batch_mode) {
 	    fprintf(stderr, wrongmsg_batch, keytype, fingerprint);
@@ -137,7 +145,9 @@ int verify_ssh_host_key(void *frontend, char *host, int port, char *keytype,
 			 ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT));
     ReadFile(hin, line, sizeof(line) - 1, &i, NULL);
     SetConsoleMode(hin, savemode);
-
+#ifdef PERSOPORT
+    }
+#endif
     if (line[0] != '\0' && line[0] != '\r' && line[0] != '\n') {
 	if (line[0] == 'y' || line[0] == 'Y')
 	    store_host_key(host, port, keytype, keystr);

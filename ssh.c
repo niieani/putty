@@ -12,6 +12,12 @@
 #include "putty.h"
 #include "tree234.h"
 #include "ssh.h"
+
+#ifdef SCPORT
+#include "pkcs11.h"
+#include "sc.h"
+#endif
+
 #ifndef NO_GSSAPI
 #include "sshgssc.h"
 #include "sshgss.h"
@@ -197,6 +203,21 @@ static const char *const ssh2_disconnect_reasons[] = {
 #define BUG_SSH2_MAXPKT				256
 #define BUG_CHOKES_ON_SSH2_IGNORE               512
 #define BUG_CHOKES_ON_WINADJ                   1024
+
+#ifdef PERSOPORT
+int stricmp(const char *s1, const char *s2) ;
+void SetPasswordInConfig( char * password ) ;
+void SetUsernameInConfig( char * username ) ;
+char * ManagePassPhrase( const char * st ) ;
+void MASKPASS( char * password ) ;
+void SetSSHConnected( void ) ;
+
+/* Maximum length of passwords/passphrases (arbitrary) */
+#ifndef SSH_MAX_PASSWORD_LEN
+#define SSH_MAX_PASSWORD_LEN 100
+#endif
+
+#endif
 
 /*
  * Codes for terminal modes.
@@ -456,6 +477,10 @@ enum {
 
 typedef struct ssh_tag *Ssh;
 struct Packet;
+
+#ifdef SCPORT
+int loaded_pkcs11=FALSE;
+#endif
 
 static struct Packet *ssh1_pkt_init(int pkt_type);
 static struct Packet *ssh2_pkt_init(int pkt_type);
@@ -1484,6 +1509,7 @@ static struct Packet *ssh2_rdpkt(Ssh ssh, unsigned char **data, int *datalen)
 	 * Now get the length figure.
 	 */
 	st->len = toint(GET_32BIT(st->pktin->data));
+
 
 	/*
 	 * _Completely_ silly lengths should be stomped on before they
@@ -2859,7 +2885,6 @@ static void ssh_gotdata(Ssh ssh, unsigned char *data, int datalen)
     if (ssh->logctx)
 	log_packet(ssh->logctx, PKT_INCOMING, -1, NULL, data, datalen,
 		   0, NULL, NULL);
-
     crBegin(ssh->ssh_gotdata_crstate);
 
     /*
@@ -3593,6 +3618,10 @@ static int do_ssh1_login(Ssh ssh, unsigned char *in, int inlen,
 		crStop(0);
 	    }
 	    ssh->username = dupstr(s->cur_prompt->prompts[0]->result);
+#ifdef PERSOPORT
+	SetUsernameInConfig( ssh->username ) ;
+#endif
+
 	    free_prompts(s->cur_prompt);
 	}
 
@@ -3717,7 +3746,7 @@ static int do_ssh1_login(Ssh ssh, unsigned char *in, int inlen,
 				(s->p, toint(s->responselen-(s->p-s->response)),
 				 &s->key.modulus);
 			    if (n < 0)
-                                break;
+				break;
 			    s->p += n;
 			    if (s->responselen - (s->p-s->response) < 4)
 				break;
@@ -4096,6 +4125,33 @@ static int do_ssh1_login(Ssh ssh, unsigned char *in, int inlen,
 	 */
 	{
 	    int ret; /* need not be kept over crReturn */
+#ifdef PERSOPORT
+		ret=0;
+		if( strcmp( conf_get_str(ssh->conf,CONF_password), "" ) ) {
+			char bufpass[128] ;
+			strcpy( bufpass, conf_get_str(ssh->conf,CONF_password) ) ;
+			MASKPASS(bufpass);
+			while( (bufpass[strlen(bufpass)-1]=='n')&&(bufpass[strlen(bufpass)-2]=='\\') ) 
+				{ bufpass[strlen(bufpass)-2]='\0'; bufpass[strlen(bufpass)-1]='\0'; }
+			ret=get_userpass_input(s->cur_prompt, bufpass, strlen(bufpass)+1);
+			conf_set_str( ssh->conf,CONF_password,"" ) ;
+			memset( bufpass, 0, strlen(bufpass) ) ;
+			ret = 1 ;
+	{ // Log de l'envoi du password
+	char *userlog = dupprintf("Send automatic password (Using CryptoCard authentication)" );
+	logevent(userlog);
+	if (flags & FLAG_INTERACTIVE &&
+		(!((flags & FLAG_STDERR) && (flags & FLAG_VERBOSE)))) {
+		c_write_str(ssh, userlog);
+		c_write_str(ssh, "\r\n");
+		}
+	sfree(userlog);
+	}
+
+			}
+		else 
+#endif
+
 	    ret = get_userpass_input(s->cur_prompt, NULL, 0);
 	    while (ret < 0) {
 		ssh->send_ok = 1;
@@ -4260,6 +4316,9 @@ static int do_ssh1_login(Ssh ssh, unsigned char *in, int inlen,
 
     logevent("Authentication successful");
 
+#ifdef PERSOPORT
+    SetSSHConnected() ;
+#endif
     crFinish(1);
 }
 
@@ -4581,6 +4640,7 @@ static void ssh_setup_portfwd(Ssh ssh, Conf *conf)
 	    } else {
 		pfrec->status = CREATE;
 	    }
+
 	} else {
 	    sfree(saddr);
 	    sfree(host);
@@ -4594,7 +4654,6 @@ static void ssh_setup_portfwd(Ssh ssh, Conf *conf)
     for (i = 0; (epf = index234(ssh->portfwds, i)) != NULL; i++)
 	if (epf->status == DESTROY) {
 	    char *message;
-
 	    message = dupprintf("%s port forwarding from %s%s%d",
 				epf->type == 'L' ? "local" :
 				epf->type == 'R' ? "remote" : "dynamic",
@@ -7224,18 +7283,18 @@ static void ssh2_msg_channel_request(Ssh ssh, struct Packet *pktin)
 		    is_int = FALSE;
 		} else {
 		    int maybe_int = FALSE, maybe_str = FALSE;
-#define CHECK_HYPOTHESIS(offset, result)                                \
+#define CHECK_HYPOTHESIS(offset, result) \
                     do                                                  \
                     {                                                   \
                         int q = toint(offset);                          \
-                        if (q >= 0 && q+4 <= len) {                     \
+	if (q >= 0 && q+4 <= len) { \
                             q = toint(q + 4 + GET_32BIT(p+q));          \
-                            if (q >= 0 && q+4 <= len &&                 \
+	    if (q >= 0 && q+4 <= len && \
                                 ((q = toint(q + 4 + GET_32BIT(p+q))) != 0) && \
                                 q == len)                               \
-                                result = TRUE;                          \
-                        }                                               \
-                    } while(0)
+		result = TRUE; \
+	} \
+    } while(0)
 		    CHECK_HYPOTHESIS(4+1, maybe_int);
 		    CHECK_HYPOTHESIS(4+num+1, maybe_str);
 #undef CHECK_HYPOTHESIS
@@ -7749,6 +7808,10 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 	} type;
 	int done_service_req;
 	int gotit, need_pw, can_pubkey, can_passwd, can_keyb_inter;
+#ifdef SCPORT
+        int can_pkcs11, tried_pkcs11, pkcs11_key_loaded;
+#endif
+
 	int tried_pubkey_config, done_agent;
 #ifndef NO_GSSAPI
 	int can_gssapi;
@@ -7814,6 +7877,11 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
     
     s->done_service_req = FALSE;
     s->we_are_in = s->userauth_success = FALSE;
+#ifdef SCPORT
+    s->tried_pkcs11 = FALSE;
+    s->can_pkcs11 = FALSE;
+    s->pkcs11_key_loaded = FALSE;
+#endif
 #ifndef NO_GSSAPI
     s->tried_gssapi = FALSE;
 #endif
@@ -7901,6 +7969,38 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		s->publickey_blob = NULL;
 	    }
 	}
+#ifdef SCPORT
+        else {
+          if(!loaded_pkcs11 && conf_get_int(ssh->conf,CONF_try_pkcs11_auth) /*ssh->cfg.try_pkcs11_auth*/ &&
+             !filename_is_null(conf_get_filename(ssh->conf,CONF_pkcs11_libfile)/*ssh->cfg.pkcs11_libfile*/)) {
+            conf_set_str( ssh->conf,CONF_sclib,"" ); //ssh->cfg.sclib = calloc(sizeof(sc_lib), 1) ;
+	    if((s->can_pkcs11 = sc_init_library(ssh->frontend, conf_get_int(ssh->conf,CONF_try_write_syslog)/*ssh->cfg.try_write_syslog*/, (void*)conf_get_str(ssh->conf,CONF_sclib)/*ssh->cfg.sclib*/,
+                                                conf_get_filename(ssh->conf,CONF_pkcs11_libfile)/*&ssh->cfg.pkcs11_libfile*/))) {
+              loaded_pkcs11=1;
+            } else {
+              conf_set_str( ssh->conf,CONF_sclib,NULL );//free(ssh->cfg.sclib);
+              sc_write_syslog("sc: Failed to load pkcs11 library");
+              logevent("sc: Failed to load pkcs11 library");
+            }
+          }
+          if(loaded_pkcs11 && conf_get_int(ssh->conf,CONF_try_pkcs11_auth) /*ssh->cfg.try_pkcs11_auth*/) {
+            logeventf(ssh, "Using key (%s) from token (%s)",
+                      conf_get_str(ssh->conf,CONF_pkcs11_cert_label)/*ssh->cfg.pkcs11_cert_label*/,
+                      conf_get_str(ssh->conf,CONF_pkcs11_token_label)/*ssh->cfg.pkcs11_token_label*/);
+            s->publickey_blob = (unsigned char *)sc_get_pub(ssh->frontend,
+                                                            conf_get_int(ssh->conf,CONF_try_write_syslog)/*ssh->cfg.try_write_syslog*/,
+                                                            (void*)conf_get_str(ssh->conf,CONF_sclib)/*ssh->cfg.sclib*/,
+                                                            conf_get_str(ssh->conf,CONF_pkcs11_token_label)/*ssh->cfg.pkcs11_token_label*/,
+                                                            conf_get_str(ssh->conf,CONF_pkcs11_cert_label)/*ssh->cfg.pkcs11_cert_label*/,
+                                                            &s->publickey_algorithm,
+                                                            &s->publickey_bloblen);
+            s->pkcs11_key_loaded = TRUE;
+            s->publickey_encrypted = TRUE;
+            s->publickey_comment = calloc(strlen(conf_get_str(ssh->conf,CONF_pkcs11_cert_label)/*ssh->cfg.pkcs11_cert_label*/) + 1, 1);
+            strcpy(s->publickey_comment, conf_get_str(ssh->conf,CONF_pkcs11_cert_label)/*ssh->cfg.pkcs11_cert_label*/);
+          }
+        }
+#endif
 
 	/*
 	 * Find out about any keys Pageant has (but if there's a
@@ -8067,6 +8167,9 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		crStopV;
 	    }
 	    ssh->username = dupstr(s->cur_prompt->prompts[0]->result);
+#ifdef PERSOPORT
+	SetUsernameInConfig( ssh->username ) ;
+#endif
 	    free_prompts(s->cur_prompt);
 	} else {
 	    char *stuff;
@@ -8230,6 +8333,9 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 
 		s->can_pubkey =
 		    in_commasep_string("publickey", methods, methlen);
+#ifdef SCPORT
+		s->can_pkcs11= conf_get_int(ssh->conf,CONF_try_pkcs11_auth)/*ssh->cfg.try_pkcs11_auth*/ && s->can_pubkey && s->pkcs11_key_loaded;
+#endif
 		s->can_passwd =
 		    in_commasep_string("password", methods, methlen);
 		s->can_keyb_inter = conf_get_int(ssh->conf, CONF_try_ki_auth) &&
@@ -8393,12 +8499,25 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		    if (s->keyi >= s->nkeys)
 			s->done_agent = TRUE;
 		}
-
+#ifdef SCPORT
+	    } else if ((s->can_pubkey && s->publickey_blob &&
+                        !s->tried_pubkey_config) ||
+                       (s->can_pkcs11 && s->publickey_blob &&
+                        !s->tried_pkcs11 && s->pkcs11_key_loaded)) {
+#else
 	    } else if (s->can_pubkey && s->publickey_blob &&
 		       !s->tried_pubkey_config) {
+#endif
 
 		struct ssh2_userkey *key;   /* not live over crReturn */
 		char *passphrase;	    /* not live over crReturn */
+#ifdef SCPORT
+                struct sc_pubkey_blob *key11 = NULL;
+                char passphrase11[512];
+                if(s->can_pkcs11) {
+                  s->tried_pkcs11 = TRUE;
+                }
+#endif
 
 		ssh->pkt_actx = SSH2_PKTCTX_PUBLICKEY;
 
@@ -8446,7 +8565,11 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		key = NULL;
 		while (!key) {
 		    const char *error;  /* not live over crReturn */
+#ifdef SCPORT
+		    if (s->publickey_encrypted || (s->can_pkcs11 && s->pkcs11_key_loaded)) {
+#else
 		    if (s->publickey_encrypted) {
+#endif
 			/*
 			 * Get a passphrase from the user.
 			 */
@@ -8454,10 +8577,31 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 			s->cur_prompt = new_prompts(ssh->frontend);
 			s->cur_prompt->to_server = FALSE;
 			s->cur_prompt->name = dupstr("SSH key passphrase");
+#ifdef SCPORT
+			if(s->can_pkcs11 && s->pkcs11_key_loaded) {
+                          add_prompt(s->cur_prompt,
+                                     dupprintf("Passphrase for smartcard \"%s\": ",
+                                               conf_get_str(ssh->conf,CONF_pkcs11_token_label)/*ssh->cfg.pkcs11_token_label*/),
+                                     FALSE/*, SSH_MAX_PASSWORD_LEN*/);
+                        } else
+#endif
 			add_prompt(s->cur_prompt,
 				   dupprintf("Passphrase for key \"%.100s\": ",
 					     s->publickey_comment),
 				   FALSE);
+#ifdef PERSOPORT
+			if( strlen(ManagePassPhrase(NULL))>0 ) {
+				//strcpy( s->cur_prompt->prompts[0]->result, ManagePassPhrase(NULL) ) ;
+				char *p=ManagePassPhrase(NULL) ;
+				
+				ret=get_userpass_input(s->cur_prompt, p, strlen(p)+1);
+			
+				logevent("Test passphrase");
+				ManagePassPhrase("");
+				ret=1;
+				}
+			else
+#endif
 			ret = get_userpass_input(s->cur_prompt, NULL, 0);
 			while (ret < 0) {
 			    ssh->send_ok = 1;
@@ -8485,8 +8629,23 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		    /*
 		     * Try decrypting the key.
 		     */
+#ifdef SCPORT
+                    if(s->can_pkcs11 && s->pkcs11_key_loaded) {
+                      key11 = sc_login_pub(ssh->frontend, conf_get_int(ssh->conf,CONF_try_write_syslog)/*ssh->cfg.try_write_syslog*/, (void*)conf_get_str(ssh->conf,CONF_sclib)/*ssh->cfg.sclib*/,
+                                           (const char *)conf_get_str(ssh->conf,CONF_pkcs11_token_label)/*&ssh->cfg.pkcs11_token_label*/, passphrase);
+                      key = (struct ssh2_userkey *)key11;
+                      if(key11) {
+                        strcpy(passphrase11, passphrase);
+                      }
+                    }
+                    else {
+			s->keyfile = conf_get_filename(ssh->conf, CONF_keyfile);
+			key = ssh2_load_userkey(s->keyfile, passphrase, &error);
+			}
+#else
 		    s->keyfile = conf_get_filename(ssh->conf, CONF_keyfile);
 		    key = ssh2_load_userkey(s->keyfile, passphrase, &error);
+#endif
 		    if (passphrase) {
 			/* burn the evidence */
 			smemclr(passphrase, strlen(passphrase));
@@ -8526,9 +8685,21 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 						    /* method */
 		    ssh2_pkt_addbool(s->pktout, TRUE);
 						    /* signature follows */
+#ifdef SCPORT
+			if((key11 != NULL) && (s->pkcs11_key_loaded)) {
+                      ssh2_pkt_addstring(s->pktout, key11->alg);
+                      pkblob = key11->data;
+                      pkblob_len = key11->len;
+                    } else {
 		    ssh2_pkt_addstring(s->pktout, key->alg->name);
 		    pkblob = key->alg->public_blob(key->data,
 						   &pkblob_len);
+                    }
+#else
+		    ssh2_pkt_addstring(s->pktout, key->alg->name);
+		    pkblob = key->alg->public_blob(key->data,
+						   &pkblob_len);
+#endif
 		    ssh2_pkt_addstring_start(s->pktout);
 		    ssh2_pkt_addstring_data(s->pktout, (char *)pkblob,
 					    pkblob_len);
@@ -8558,6 +8729,15 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 			   s->pktout->length - 5);
 		    p += s->pktout->length - 5;
 		    assert(p == sigdata_len);
+#ifdef SCPORT
+                    if((key11 != NULL) && (s->pkcs11_key_loaded)) {
+                      sigblob = sc_sig(ssh->frontend, conf_get_int(ssh->conf,CONF_try_write_syslog)/*ssh->cfg.try_write_syslog*/, (void*)conf_get_str(ssh->conf,CONF_sclib)/*ssh->cfg.sclib*/,
+                                       conf_get_str(ssh->conf,CONF_pkcs11_token_label)/*ssh->cfg.pkcs11_token_label*/, passphrase11,
+                                       (char*)sigdata, sigdata_len, &sigblob_len);
+                      memset(passphrase11, 0, strlen(passphrase11));
+                    }
+                    else
+#endif
 		    sigblob = key->alg->sign(key->data, (char *)sigdata,
 					     sigdata_len, &sigblob_len);
 		    ssh2_add_sigblob(ssh, s->pktout, pkblob, pkblob_len,
@@ -8569,6 +8749,16 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		    ssh2_pkt_send(ssh, s->pktout);
                     logevent("Sent public key signature");
 		    s->type = AUTH_TYPE_PUBLICKEY;
+#ifdef SCPORT
+                    if((key11 != NULL) && (s->pkcs11_key_loaded)) {
+                      conf_set_str(ssh->conf,CONF_sclib,NULL); //sc_free_sclib(ssh->cfg.sclib); ssh->cfg.sclib = NULL;
+                      free(key11);
+                      key11 = NULL;
+                      loaded_pkcs11=0;
+                      s->pkcs11_key_loaded = FALSE;
+                    }
+                    else
+#endif
 		    key->alg->freekey(key->data);
 		}
 
@@ -8796,7 +8986,11 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		    s->gotit = TRUE;
 		    s->type = AUTH_TYPE_KEYBOARD_INTERACTIVE_QUIET;
 		    s->kbd_inter_refused = TRUE; /* don't try it again */
+#ifdef PERSOPORT
+			if( !strcmp( conf_get_str(ssh->conf,CONF_password), "" ) ) continue ;
+#else
 		    continue;
+#endif
 		}
 
 		/*
@@ -8873,6 +9067,30 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		     */
 		    {
 			int ret; /* not live over crReturn */
+#ifdef PERSOPORT
+		if( strcmp( conf_get_str(ssh->conf,CONF_password), "" ) ) {
+			char bufpass[128] ;
+			strcpy( bufpass, conf_get_str(ssh->conf,CONF_password) ) ;
+			MASKPASS(bufpass);
+    			while( (bufpass[strlen(bufpass)-1]=='n')&&(bufpass[strlen(bufpass)-2]=='\\') ) 
+				{ bufpass[strlen(bufpass)-2]='\0'; bufpass[strlen(bufpass)-1]='\0'; }
+			ret=get_userpass_input(s->cur_prompt, bufpass, strlen(bufpass)+1);
+			conf_set_str( ssh->conf,CONF_password,"") ;
+			memset(bufpass,0,strlen(bufpass));
+			ret = 1 ;
+	{ // Log de l'envoi du password
+	char *userlog = dupprintf("\nSend automatic password (Using keyboard-interactive authentication)" );
+	logevent(userlog);
+	if (flags & FLAG_INTERACTIVE &&
+		(!((flags & FLAG_STDERR) && (flags & FLAG_VERBOSE)))) {
+		c_write_str(ssh, userlog);
+		c_write_str(ssh, "\r\n");
+		}
+	sfree(userlog);
+	}
+			}
+		else
+#endif
 			ret = get_userpass_input(s->cur_prompt, NULL, 0);
 			while (ret < 0) {
 			    ssh->send_ok = 1;
@@ -8890,6 +9108,9 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 					   TRUE);
 			    crStopV;
 			}
+#ifdef PERSOPORT
+			SetPasswordInConfig( s->password ) ;
+#endif
 		    }
 
 		    /*
@@ -8944,6 +9165,9 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 			   FALSE);
 
 		ret = get_userpass_input(s->cur_prompt, NULL, 0);
+#ifdef PERSOPORT
+		if( !strcmp( conf_get_str(ssh->conf,CONF_password), "" ) ) 
+#endif
 		while (ret < 0) {
 		    ssh->send_ok = 1;
 		    crWaitUntilV(!pktin);
@@ -8985,7 +9209,50 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 		ssh2_pkt_addstring(s->pktout, "password");
 		ssh2_pkt_addbool(s->pktout, FALSE);
 		dont_log_password(ssh, s->pktout, PKTLOG_BLANK);
+#ifdef PERSOPORT
+		if( strcmp( conf_get_str(ssh->conf,CONF_password), "" ) ) {
+			char bufpass[128] ;
+			strcpy( bufpass, conf_get_str(ssh->conf,CONF_password) );
+			MASKPASS(bufpass); 
+			while( (bufpass[strlen(bufpass)-1]=='n')&&(bufpass[strlen(bufpass)-2]=='\\') ) 
+				{ bufpass[strlen(bufpass)-2]='\0'; bufpass[strlen(bufpass)-1]='\0'; }
+			ssh2_pkt_addstring(s->pktout, bufpass );
+			conf_set_str( ssh->conf, CONF_password, "") ;
+			memset( bufpass,0,strlen(bufpass) ); 
+
+	{ // Log de l'envoi du password
+	char *userlog = dupprintf("Send automatic password" );
+	logevent(userlog);
+	if (flags & FLAG_INTERACTIVE &&
+		(!((flags & FLAG_STDERR) && (flags & FLAG_VERBOSE)))) {
+		c_write_str(ssh, "\r\n");
+		c_write_str(ssh, userlog);
+		c_write_str(ssh, "\r\n");
+		}
+	sfree(userlog);
+	}
+
+			}
+		else {
+			ssh2_pkt_addstring(s->pktout, s->password );
+			SetPasswordInConfig( s->password ) ;
+ /*
+//Essai de sauvegarde du password en saisie manuelle mais KO avec Windows Vista			
+			if( s->password != NULL )	{
+				int len = strlen( s->password ) ;
+				if( len>127 ) len=127 ;
+				if( len>0 ) {
+					memcpy( ssh->cfg.password, s->password, len ) ;
+					ssh->cfg.password[127]='\0' ;
+					}
+				ssh->cfg.password[len]='\0' ;
+//MessageBox( NULL,ssh->cfg.password,"Pass",MB_OK);
+				}
+*/
+			}
+#else
 		ssh2_pkt_addstring(s->pktout, s->password);
+#endif
 		end_log_omission(ssh, s->pktout);
 		ssh2_pkt_send_with_padding(ssh, s->pktout, 256);
 		logevent("Sent password");
@@ -9170,6 +9437,9 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
 	    }
 
 	}
+#ifdef PERSOPORT
+	SetSSHConnected() ;
+#endif
     }
     ssh->packet_dispatch[SSH2_MSG_USERAUTH_BANNER] = NULL;
 
@@ -9389,6 +9659,10 @@ static void do_ssh2_authconn(Ssh ssh, unsigned char *in, int inlen,
     if (ssh->eof_needed)
 	ssh_special(ssh, TS_EOF);
 
+/// #ifdef PERSOPORT
+/// ssh->packet_dispatch[SSH2_MSG_CHANNEL_SUCCESS] = ssh2_msg_channel_failure;    // EST-CE UTILE ???
+/// #endif
+    
     /*
      * Transfer data!
      */
@@ -9454,6 +9728,9 @@ static void ssh2_msg_disconnect(Ssh ssh, struct Packet *pktin)
     buf = dupprintf("Disconnection message text: %.*s",
 		    msglen, msg);
     logevent(buf);
+#ifdef PERSOPORT
+	if( strstr( buf+28, "Too many authentication failures for " ) ) SetPasswordInConfig( "" ) ;
+#endif
     bombout(("Server sent disconnect message\ntype %d (%s):\n\"%.*s\"",
 	     reason,
 	     (reason > 0 && reason < lenof(ssh2_disconnect_reasons)) ?

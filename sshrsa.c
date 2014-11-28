@@ -10,6 +10,14 @@
 #include "ssh.h"
 #include "misc.h"
 
+#ifdef WINCRYPTPORT
+#ifdef USE_CAPI
+#ifdef _WINDOWS
+#include "wincapi.h"
+#endif /* _WINDOWS */
+#endif /* USE_CAPI */
+#endif
+
 int makekey(unsigned char *data, int len, struct RSAKey *result,
 	    unsigned char **keystr, int order)
 {
@@ -410,6 +418,16 @@ int rsa_verify(struct RSAKey *key)
     Bignum n, ed, pm1, qm1;
     int cmp;
 
+#ifdef WINCRYPTPORT
+#ifdef USE_CAPI
+#ifdef _WINDOWS
+	if(capi_is_capikey(key)) {
+		return 1;
+	}
+#endif /* _WINDOWS */
+#endif /* USE_CAPI */
+#endif
+
     /* n must equal pq. */
     n = bigmul(key->p, key->q);
     cmp = bignum_cmp(n, key->modulus);
@@ -708,6 +726,16 @@ static void *rsa2_openssh_createkey(unsigned char **blob, int *len)
     char **b = (char **) blob;
     struct RSAKey *rsa;
 
+#ifdef WINCRYPTPORT
+#ifdef USE_CAPI
+#ifdef _WINDOWS
+	if((*len >= 7) && 0 == strncmp("cert://", (const char*)*blob, 7)) {
+		return capi_load_key(blob, len);
+	}
+#endif /* _WINDOWS */
+#endif /* USE_CAPI */
+#endif
+
     rsa = snew(struct RSAKey);
     rsa->comment = NULL;
 
@@ -899,6 +927,16 @@ static unsigned char *rsa2_sign(void *key, char *data, int datalen,
     Bignum in, out;
     int i, j;
 
+#ifdef WINCRYPTPORT
+#ifdef USE_CAPI
+#ifdef _WINDOWS
+	if(capi_is_capikey(rsa)) {
+		out = capi_rsa2_sign(rsa, data, datalen);
+	} else {
+#endif /* _WINDOWS */
+#endif /* USE_CAPI */
+#endif
+
     SHA_Simple(data, datalen, hash);
 
     nbytes = (bignum_bitcount(rsa->modulus) - 1) / 8;
@@ -918,6 +956,14 @@ static unsigned char *rsa2_sign(void *key, char *data, int datalen,
 
     out = rsa_privkey_op(in, rsa);
     freebn(in);
+
+#ifdef WINCRYPTPORT
+#ifdef USE_CAPI
+#ifdef _WINDOWS
+	}
+#endif /* _WINDOWS */
+#endif /* USE_CAPI */
+#endif
 
     nbytes = (bignum_bitcount(out) + 7) / 8;
     bytes = snewn(4 + 7 + 4 + nbytes, unsigned char);

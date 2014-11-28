@@ -22,6 +22,10 @@
 
 #include <commctrl.h>
 
+#ifdef ZMODEMPORT
+#include <shlobj.h>
+#endif
+
 #define GAPBETWEEN 3
 #define GAPWITHIN 1
 #define GAPXBOX 7
@@ -447,7 +451,7 @@ char *staticwrap(struct ctlpos *cp, HWND hwnd, char *text, int *lines)
     ReleaseDC(cp->hwnd, hdc);
 
     if (lines) *lines = nlines;
-
+    
     sfree(pwidths);
 
     return ret;
@@ -1631,6 +1635,9 @@ void winctrl_layout(struct dlgparam *dp, struct winctrls *wc,
 	    shortcuts[nshortcuts++] = ctrl->fileselect.shortcut;
 	    editbutton(&pos, escaped, base_id, base_id+1,
 		       "Bro&wse...", base_id+2);
+#if (defined PERSOPORT) && (!defined ZMODEMPORT)
+	    if(get_param( "ZMODEM" )) shortcuts[nshortcuts++] = 'w';
+#endif
 	    shortcuts[nshortcuts++] = 'w';
 	    sfree(escaped);
 	    break;
@@ -1644,6 +1651,17 @@ void winctrl_layout(struct dlgparam *dp, struct winctrls *wc,
             data = fontspec_new("", 0, 0, 0);
 	    sfree(escaped);
 	    break;
+#ifdef ZMODEMPORT
+	case CTRL_DIRECTORYSELECT:
+	    num_ids = 3;
+	    escaped = shortcut_escape(ctrl->fileselect.label,
+				      ctrl->fileselect.shortcut);
+	    shortcuts[nshortcuts++] = ctrl->fileselect.shortcut;
+	    editbutton(&pos, escaped, base_id, base_id+1,
+		       "Bro&wse...", base_id+2);
+	    sfree(escaped);
+	    break;
+#endif
 	  default:
 	    assert(!"Can't happen");
 	    num_ids = 0;	       /* placate gcc */
@@ -1668,8 +1686,8 @@ void winctrl_layout(struct dlgparam *dp, struct winctrls *wc,
 	    if (actual_base_id == base_id)
 		base_id += num_ids;
 	} else {
-            sfree(data);
-        }
+	    sfree(data);
+	}
 
 	if (colstart >= 0) {
 	    /*
@@ -1972,6 +1990,43 @@ int winctrl_handle_command(struct dlgparam *dp, UINT msg,
 	    }
 	}
 	break;
+#ifdef ZMODEMPORT
+      case CTRL_DIRECTORYSELECT:
+      	if (msg == WM_COMMAND && id == 1 &&
+	    (HIWORD(wParam) == EN_SETFOCUS || HIWORD(wParam) == EN_KILLFOCUS))
+	    winctrl_set_focus(ctrl, dp, HIWORD(wParam) == EN_SETFOCUS);
+	if (msg == WM_COMMAND && id == 2 &&
+	    (HIWORD(wParam) == BN_SETFOCUS || HIWORD(wParam) == BN_KILLFOCUS))
+	    winctrl_set_focus(ctrl, dp, HIWORD(wParam) == BN_SETFOCUS);
+	if (msg == WM_COMMAND && id == 1 && HIWORD(wParam) == EN_CHANGE)
+	    ctrl->generic.handler(ctrl, dp, dp->data, EVENT_VALCHANGE);
+	if (id == 2 &&
+	    (msg == WM_COMMAND &&
+	     (HIWORD(wParam) == BN_CLICKED ||
+	      HIWORD(wParam) == BN_DOUBLECLICKED))) {
+		BROWSEINFO bi;
+		char filename[FILENAME_MAX];
+		LPITEMIDLIST folder;
+
+		memset(&bi, 0, sizeof(bi));
+		bi.hwndOwner = dp->hwnd;
+		bi.pszDisplayName = filename;
+		bi.lpszTitle = ctrl->fileselect.title;
+		bi.ulFlags = BIF_RETURNONLYFSDIRS;
+
+		CoInitialize(NULL);
+		if (folder = SHBrowseForFolder(&bi)) {
+		    LPMALLOC shmalloc;
+		    if (SHGetPathFromIDList(folder, filename)) {
+			    SetDlgItemText(dp->hwnd, c->base_id + 1, filename);
+			    ctrl->generic.handler(ctrl, dp, dp->data, EVENT_VALCHANGE);
+		    }
+		    SHGetMalloc(&shmalloc);
+		    (*shmalloc->lpVtbl->Free)(shmalloc, folder);
+		}
+	}
+	break;
+#endif
     }
 
     /*
@@ -2210,6 +2265,24 @@ int dlg_listbox_index(union control *ctrl, void *dlg)
 	return ret;
 }
 
+#ifdef PERSOPORT
+int dlg_listbox_get(union control *ctrl, void *dlg, int index, char * pstr, int maxcount) {
+    struct dlgparam *dp = (struct dlgparam *)dlg;
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+    return
+	GetDlgItemText( dp->hwnd, c->base_id+1, pstr, maxcount );
+	}
+
+int dlg_listbox_gettext(union control *ctrl, void *dlg, int index, char * pstr, int maxcount) {
+    struct dlgparam *dp = (struct dlgparam *)dlg;
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+    return
+	//GetDlgItemText( dp->hwnd, c->base_id+1, pstr, maxcount );
+	SendMessage(GetDlgItem( dp->hwnd, c->base_id+1 ), LB_GETTEXT, index, (LPARAM)pstr);
+	//SendDlgItemMessage(dp->hwnd, c->base_id+1, LB_GETTEXT, (LPARAM)pstr, 1024);
+	}	
+#endif
+
 int dlg_listbox_issel(union control *ctrl, void *dlg, int index)
 {
     struct dlgparam *dp = (struct dlgparam *)dlg;
@@ -2371,7 +2444,7 @@ void dlg_set_focus(union control *ctrl, void *dlg)
     int id;
     HWND ctl;
     if (!c)
-        return;
+	return;
     switch (ctrl->generic.type) {
       case CTRL_EDITBOX: id = c->base_id + 1; break;
       case CTRL_RADIO:
@@ -2389,6 +2462,9 @@ void dlg_set_focus(union control *ctrl, void *dlg)
       case CTRL_LISTBOX: id = c->base_id + 1; break;
       case CTRL_FILESELECT: id = c->base_id + 1; break;
       case CTRL_FONTSELECT: id = c->base_id + 2; break;
+#ifdef ZMODEMPORT
+      case CTRL_DIRECTORYSELECT: id = c->base_id + 1; break;
+#endif
       default: id = c->base_id; break;
     }
     ctl = GetDlgItem(dp->hwnd, id);
@@ -2634,3 +2710,110 @@ void *dlg_alloc_privdata(union control *ctrl, void *dlg, size_t size)
     p->data = smalloc(size);
     return p->data;
 }
+
+#ifdef ZMODEMPORT
+void dlg_directorysel_set(union control *ctrl, void *dlg, Filename fn)
+{
+    struct dlgparam *dp = (struct dlgparam *)dlg;
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+    assert(c && c->ctrl->generic.type == CTRL_DIRECTORYSELECT);
+    SetDlgItemText(dp->hwnd, c->base_id+1, fn.path);
+}
+
+void dlg_directorysel_get(union control *ctrl, void *dlg, Filename *fn)
+{
+    struct dlgparam *dp = (struct dlgparam *)dlg;
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+    assert(c && c->ctrl->generic.type == CTRL_DIRECTORYSELECT);
+    GetDlgItemText(dp->hwnd, c->base_id+1, fn->path, lenof(fn->path));
+    fn->path[lenof(fn->path)-1] = '\0';
+}
+#endif
+#ifdef TUTTYPORT
+
+void dlg_control_hide(union control *ctrl, void *dlg)
+{
+    struct dlgparam *dp = (struct dlgparam *) dlg;
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+
+    if (dp && ctrl) {
+	HWND ctl = GetDlgItem(dp->hwnd, c->base_id + 1);
+	if (ctl)
+	    ShowWindow(ctl, FALSE);
+    };
+};
+
+void dlg_control_show(union control *ctrl, void *dlg)
+{
+    struct dlgparam *dp = (struct dlgparam *) dlg;
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+
+    if (dp && ctrl) {
+	HWND ctl = GetDlgItem(dp->hwnd, c->base_id + 1);
+	if (ctl)
+	    ShowWindow(ctl, TRUE);
+    };
+};
+
+void dlg_control_enable(union control *ctrl, void *dlg, int enable)
+{
+    struct dlgparam *dp = (struct dlgparam *) dlg;
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+    HWND ctl;
+    int i, max;
+
+    if (dp && ctrl) {
+	switch (ctrl->generic.type) {
+	case CTRL_RADIO:
+	    max = ctrl->radio.nbuttons + 1;
+	    break;
+/*	case CTRL_SPECIALEDIT:
+	    max = 3;
+	    break;*/
+	default:
+	    max = 1;
+	};
+	for (i = 0; i < max; i++) {
+	    ctl = GetDlgItem(dp->hwnd, c->base_id + i);
+	    if (ctl)
+		EnableWindow(ctl, enable);
+	};
+    };
+};
+
+
+void dlg_specialedit_switch(union control *ctrl, void *dlg, int which)
+{
+    struct dlgparam *dp = (struct dlgparam *) dlg;
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+
+    HWND ctrl1 = GetDlgItem(dp->hwnd, c->base_id + 1);
+    HWND ctrl2 = GetDlgItem(dp->hwnd, c->base_id + 2);
+
+    if (which == 0) {
+	ShowWindow(ctrl2, SW_HIDE);
+	ShowWindow(ctrl1, SW_SHOW);
+    } else if (which == 1) {
+	ShowWindow(ctrl1, SW_HIDE);
+	ShowWindow(ctrl2, SW_SHOW);
+    };
+};
+
+void dlg_setcontroltext(union control *ctrl, void *dlg, char *stext)
+{
+    struct dlgparam *dp = (struct dlgparam *) dlg;
+    struct winctrl *c = dlg_findbyctrl(dp, ctrl);
+    HWND ctl = GetDlgItem(dp->hwnd, c->base_id);
+
+    SetWindowText(ctl, stext);
+};
+
+/* A simple yes/no question box. Returns TRUE if yes, otherwise FALSE. */
+int dlg_yesnobox(void *dlg, const char *msg)
+{
+    struct dlgparam *dp = (struct dlgparam *) dlg;
+    int ret = MessageBox(dp->hwnd, msg, NULL,
+			 MB_YESNO | MB_ICONQUESTION);
+    return ret == IDYES ? TRUE : FALSE;
+};
+#endif

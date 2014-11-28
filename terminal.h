@@ -236,6 +236,10 @@ struct terminal_tag {
 
     struct unicode_data *ucsdata;
 
+#ifdef ZMODEMPORT
+    int xyz_transfering;
+    struct zModemInternals *xyz_Internals;
+#endif
     /*
      * We maintain a full copy of a Conf here, not merely a pointer
      * to it. That way, when we're passed a new one for
@@ -277,7 +281,6 @@ struct terminal_tag {
     int wcFromTo_size;
     struct bidi_cache_entry *pre_bidi_cache, *post_bidi_cache;
     int bidi_cache_size;
-
     /*
      * We copy a bunch of stuff out of the Conf structure into local
      * fields in the Terminal structure, to avoid the repeated
@@ -323,6 +326,12 @@ struct terminal_tag {
     int scroll_on_disp;
     int scroll_on_key;
     int xterm_256_colour;
+#ifdef HYPERLINKPORT
+ 	/*
+	 * HACK: PuttyTray / Nutty
+	 */
+	int url_update;
+#endif
 };
 
 #define in_utf(term) ((term)->utf || (term)->ucsdata->line_codepage==CP_UTF8)

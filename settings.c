@@ -8,6 +8,18 @@
 #include "putty.h"
 #include "storage.h"
 
+#ifdef HYPERLINKPORT
+#include "urlhack.h"
+#endif
+
+#ifdef PERSOPORT
+extern char PassKey[1024] ;
+extern int cryptstring( char * st, const char * key ) ;
+extern int decryptstring( char * st, const char * key ) ;
+int get_param( const char * val ) ;
+void MASKPASS( char * password ) ;
+#endif
+
 /* The cipher order given here is the default order. */
 static const struct keyvalwhere ciphernames[] = {
     { "aes",        CIPHER_AES,             -1, -1 },
@@ -563,8 +575,19 @@ void save_open_settings(void *sesskey, Conf *conf)
     write_setting_i(sesskey, "ANSIColour", conf_get_int(conf, CONF_ansi_colour));
     write_setting_i(sesskey, "Xterm256Colour", conf_get_int(conf, CONF_xterm_256_colour));
     write_setting_i(sesskey, "BoldAsColour", conf_get_int(conf, CONF_bold_style)-1);
-
+#ifdef TUTTYPORT
+    write_setting_i(sesskey, "WindowClosable", conf_get_int(conf, CONF_window_closable) );
+    write_setting_i(sesskey, "WindowMinimizable", conf_get_int(conf, CONF_window_minimizable) );
+    write_setting_i(sesskey, "WindowMaximizable", conf_get_int(conf, CONF_window_maximizable) );
+    write_setting_i(sesskey, "WindowHasSysMenu", conf_get_int(conf, CONF_window_has_sysmenu) );
+    write_setting_i(sesskey, "DisableBottomButtons", conf_get_int(conf, CONF_bottom_buttons) );
+    write_setting_i(sesskey, "BoldAsColourTest", conf_get_int(conf, CONF_bold_colour) );
+    write_setting_i(sesskey, "UnderlinedAsColour", conf_get_int(conf, CONF_under_colour) );
+    write_setting_i(sesskey, "SelectedAsColour", conf_get_int(conf, CONF_sel_colour) );
+    for (i = 0; i < NCFGCOLOURS; i++) {
+#else
     for (i = 0; i < 22; i++) {
+#endif
 	char buf[20], buf2[30];
 	sprintf(buf, "Colour%d", i);
 	sprintf(buf2, "%d,%d,%d",
@@ -636,14 +659,145 @@ void save_open_settings(void *sesskey, Conf *conf)
     write_setting_i(sesskey, "SerialParity", conf_get_int(conf, CONF_serparity));
     write_setting_i(sesskey, "SerialFlowControl", conf_get_int(conf, CONF_serflow));
     write_setting_s(sesskey, "WindowClass", conf_get_str(conf, CONF_winclass));
+#ifdef SCPORT
+    write_setting_i(sesskey, "PKCS11SysLog", conf_get_int(conf,CONF_try_write_syslog) );
+    write_setting_i(sesskey, "AuthPKCS11", conf_get_int(conf,CONF_try_pkcs11_auth) /*cfg->try_pkcs11_auth*/);
+    write_setting_filename(sesskey, "PKCS11LibFile", conf_get_filename(conf, CONF_pkcs11_libfile) /*cfg->pkcs11_libfile*/);
+    write_setting_s(sesskey, "PKCS11TokenLabel", conf_get_str(conf, CONF_pkcs11_token_label) /*cfg->pkcs11_token_label*/);
+    write_setting_s(sesskey, "PKCS11CertLabel", conf_get_str(conf, CONF_pkcs11_cert_label) /*cfg->pkcs11_cert_label*/);
+#endif
+#ifdef RECONNECTPORT
+    write_setting_i(sesskey, "WakeupReconnect", conf_get_int(conf,CONF_wakeup_reconnect) /*cfg->wakeup_reconnect*/);
+    write_setting_i(sesskey, "FailureReconnect", conf_get_int(conf,CONF_failure_reconnect) /*cfg->failure_reconnect*/);
+#endif
+#if (defined IMAGEPORT) && (!defined FDJ)
+	if( get_param("BACKGROUNDIMAGE") ) {
+    write_setting_i(sesskey, "BgOpacity", conf_get_int(conf, CONF_bg_opacity) /*cfg->bg_opacity*/);
+    write_setting_i(sesskey, "BgSlideshow", conf_get_int(conf, CONF_bg_slideshow) /*cfg->bg_slideshow*/);
+    write_setting_i(sesskey, "BgType", conf_get_int(conf, CONF_bg_type) /*cfg->bg_type*/);
+    write_setting_filename(sesskey, "BgImageFile", conf_get_filename(conf, CONF_bg_image_filename) /*cfg->bg_image_filename*/);
+    write_setting_i(sesskey, "BgImageStyle", conf_get_int(conf, CONF_bg_image_style) /*cfg->bg_image_style*/);
+    write_setting_i(sesskey, "BgImageAbsoluteX", conf_get_int(conf, CONF_bg_image_abs_x) /*cfg->bg_image_abs_x*/);
+    write_setting_i(sesskey, "BgImageAbsoluteY", conf_get_int(conf, CONF_bg_image_abs_y) /*cfg->bg_image_abs_y*/);
+    write_setting_i(sesskey, "BgImagePlacement", conf_get_int(conf, CONF_bg_image_abs_fixed) /*cfg->bg_image_abs_fixed*/);  
+	}
+#endif
+#ifdef URLPORT
+    write_setting_i(sesskey, "CopyURLDetection", conf_get_int(conf, CONF_copy_clipbd_url_reg) /*cfg->copy_clipbd_url_reg*/);
+#endif
+#ifdef HYPERLINKPORT
+	/*
+	 * HACK: PuttyTray / Nutty
+	 * Hyperlink stuff: Save hyperlink settings
+	 */
+	write_setting_i(sesskey, "HyperlinkUnderline", conf_get_int(conf, CONF_url_underline));
+	write_setting_i(sesskey, "HyperlinkUseCtrlClick", conf_get_int(conf, CONF_url_ctrl_click));
+	write_setting_i(sesskey, "HyperlinkBrowserUseDefault", conf_get_int(conf, CONF_url_defbrowser));
+	write_setting_filename(sesskey, "HyperlinkBrowser", conf_get_filename(conf, CONF_url_browser));
+	write_setting_i(sesskey, "HyperlinkRegularExpressionUseDefault", conf_get_int(conf, CONF_url_defregex));
+#ifndef NO_HYPERLINK
+	if( !strcmp(conf_get_str(conf, CONF_url_regex),"@°@°@NO REGEX--") ) 
+		write_setting_s(sesskey, "HyperlinkRegularExpression", urlhack_default_regex ) ;
+	else
+		write_setting_s(sesskey, "HyperlinkRegularExpression", conf_get_str(conf, CONF_url_regex));
+#else
+	write_setting_s(sesskey, "HyperlinkRegularExpression", conf_get_str(conf, CONF_url_regex));
+#endif
+#endif
+#ifdef IVPORT
+    /* Background */
+    for (i = 0; i < 4; i++) {
+	static const int CONF_alphas_pc[4][2] = {
+	    CONF_alphas_pc_cursor_active,
+	    CONF_alphas_pc_cursor_inactive,
+	    CONF_alphas_pc_defauly_fg_active,
+	    CONF_alphas_pc_defauly_fg_inactive,
+	    CONF_alphas_pc_degault_bg_active,
+	    CONF_alphas_pc_degault_bg_inactive,
+	    CONF_alphas_pc_bg_active,
+	    CONF_alphas_pc_bg_inactive
+	};
+	char buf[16], buf2[16];
+	sprintf(buf, "Alpha%d", i);
+	sprintf(buf2, "%d,%d",
+		conf_get_int(conf, CONF_alphas_pc[i][0]),
+		conf_get_int(conf, CONF_alphas_pc[i][1]));
+	write_setting_s(sesskey, buf, buf2);
+    }
+    write_setting_i(sesskey, "BackgroundWallpaper", conf_get_int(conf, CONF_bg_wallpaper));
+    write_setting_i(sesskey, "BackgroundEffect", conf_get_int(conf, CONF_bg_effect));
+    write_setting_filename(sesskey, "WallpaperFile", conf_get_filename(conf, CONF_wp_file));
+    write_setting_i(sesskey, "WallpaperPosition", conf_get_int(conf, CONF_wp_position));
+    write_setting_i(sesskey, "WallpaperAlign", conf_get_int(conf, CONF_wp_align));
+    write_setting_i(sesskey, "WallpaperVerticalAlign", conf_get_int(conf, CONF_wp_valign));
+    write_setting_i(sesskey, "WallpaperMoving", conf_get_int(conf, CONF_wp_moving));
+#endif
+#ifdef CYGTERMPORT
+    //if (do_host)
+	write_setting_i(sesskey, "CygtermAltMetabit", conf_get_int(conf, CONF_alt_metabit));
+	write_setting_i(sesskey, "CygtermAutoPath", conf_get_int(conf, CONF_cygautopath) /*cfg->cygautopath*/);
+	write_setting_i(sesskey, "Cygterm64", conf_get_int(conf, CONF_cygterm64));
+	write_setting_s(sesskey, "CygtermCommand", conf_get_str(conf, CONF_cygcmd) /*cfg->cygcmd*/);
+#endif
+#ifdef ZMODEMPORT
+    write_setting_filename(sesskey, "rzCommand", conf_get_filename(conf, CONF_rzcommand) /*cfg->rzcommand*/);
+    write_setting_s(sesskey, "rzOptions", conf_get_str(conf, CONF_rzoptions) /*cfg->rzoptions*/);
+    write_setting_filename(sesskey, "szCommand", conf_get_filename(conf, CONF_szcommand) /*cfg->szcommand*/);
+    write_setting_s(sesskey, "szOptions", conf_get_str(conf, CONF_szoptions) /*cfg->szoptions*/);
+    write_setting_s(sesskey, "zDownloadDir", conf_get_str(conf, CONF_zdownloaddir) /*cfg->zdownloaddir*/);
+#endif
+#ifdef PERSOPORT
+    if( conf_get_int(conf, CONF_transparencynumber)<-1 ) conf_set_int(conf, CONF_transparencynumber,-1) ;
+    if( conf_get_int(conf, CONF_transparencynumber)>255 ) conf_set_int(conf, CONF_transparencynumber,255) ;
+    write_setting_i(sesskey, "TransparencyValue", conf_get_int(conf, CONF_transparencynumber) /*(unsigned int) cfg->transparencynumber*/) ;
+    write_setting_i(sesskey, "SendToTray", conf_get_int(conf, CONF_sendtotray) /*cfg->sendtotray*/);
+    write_setting_i(sesskey, "Maximize", conf_get_int(conf, CONF_maximize) /*cfg->maximize*/);
+    write_setting_i(sesskey, "Fullscreen", conf_get_int(conf, CONF_fullscreen) /*cfg->fullscreen*/);
+    write_setting_i(sesskey, "SaveOnExit", conf_get_int(conf, CONF_saveonexit) /*cfg->saveonexit*/);
+    write_setting_i(sesskey, "Icone", conf_get_int(conf, CONF_icone) /*cfg->icone*/);
+    //write_setting_s(sesskey, "IconeFile", conf_get_str(conf, CONF_iconefile) /*cfg->iconefile*/);
+    write_setting_filename(sesskey, "IconeFile", conf_get_filename(conf, CONF_iconefile) /*cfg->iconefile*/);
+    Filename * fn = filename_from_str( "" ) ;
+    conf_set_filename(conf,CONF_scriptfile,fn);
+    write_setting_filename(sesskey, "Scriptfile", conf_get_filename(conf, CONF_scriptfile) /*cfg->scriptfile*/);  // C'est le contenu uniquement qui est important a sauvegarder
+    filename_free(fn);
+    write_setting_s(sesskey, "ScriptfileContent", conf_get_str(conf, CONF_scriptfilecontent) );
+    write_setting_s(sesskey, "AntiIdle", conf_get_str(conf, CONF_antiidle) /*cfg->antiidle*/);
+    write_setting_s(sesskey, "LogTimestamp", conf_get_str(conf, CONF_logtimestamp) /*cfg->logtimestamp*/);
+    write_setting_s(sesskey, "Autocommand", conf_get_str(conf, CONF_autocommand) /*cfg->autocommand*/);
+    write_setting_s(sesskey, "AutocommandOut", conf_get_str(conf, CONF_autocommandout) /*cfg->autocommandout*/);
+    write_setting_s(sesskey, "Folder", conf_get_str(conf, CONF_folder) /*cfg->folder*/) ;
+    write_setting_i(sesskey, "LogTimeRotation", conf_get_int(conf, CONF_logtimerotation) /*cfg->logtimerotation*/) ;
+    write_setting_i(sesskey, "TermXPos", conf_get_int(conf, CONF_xpos) /*cfg->xpos*/) ;
+    write_setting_i(sesskey, "TermYPos", conf_get_int(conf, CONF_ypos) /*cfg->ypos*/) ;
+    write_setting_i(sesskey, "WindowState", conf_get_int(conf, CONF_windowstate) /*cfg->windowstate*/) ;
+    write_setting_i(sesskey, "SaveWindowPos", conf_get_int(conf, CONF_save_windowpos) /*cfg->save_windowpos*/); /* BKG */
+    write_setting_i(sesskey, "ForegroundOnBell", conf_get_int(conf, CONF_foreground_on_bell) /*cfg->foreground_on_bell*/);
+
+    sprintf( PassKey, "%s%sKiTTY", conf_get_str(conf, CONF_host)/*cfg->host*/, conf_get_str(conf, CONF_termtype)/*cfg->termtype*/ ) ;
+    char pst[128] ;
+    strcpy( pst, conf_get_str(conf, CONF_password ) );
+    MASKPASS(pst);
+    cryptstring( pst, PassKey ) ;
+    write_setting_s(sesskey, "Password", pst);
+    memset(pst,0,strlen(pst));
+    write_setting_i(sesskey, "CtrlTabSwitch", conf_get_int(conf, CONF_ctrl_tab_switch));
+    write_setting_s(sesskey, "Comment", conf_get_str(conf, CONF_comment) );
+#endif
+#ifdef PORTKNOCKINGPORT
+	write_setting_s(sesskey, "PortKnocking", conf_get_str(conf, CONF_portknockingoptions) );
+#endif
 }
 
 void load_settings(char *section, Conf *conf)
 {
     void *sesskey;
-
     sesskey = open_settings_r(section);
     load_open_settings(sesskey, conf);
+#ifdef PERSOPORT
+	if( section != NULL ) conf_set_str( conf, CONF_sessionname, section ) /*strcpy( cfg->sessionname, section )*/ ;
+	else conf_set_str( conf, CONF_sessionname, "" ) /*strcpy( cfg->sessionname, "" )*/ ;
+#endif
     close_settings_r(sesskey);
 
     if (conf_launchable(conf))
@@ -654,6 +808,16 @@ void load_open_settings(void *sesskey, Conf *conf)
 {
     int i;
     char *prot;
+
+#ifdef PERSOPORT
+    /*
+     * HACK: PuTTY-url
+     * Set font quality to cleartype on Windows Vista and above
+     */
+    OSVERSIONINFO versioninfo;
+    versioninfo.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+    GetVersionEx(&versioninfo);
+#endif
 
     conf_set_int(conf, CONF_ssh_subsys, 0);   /* FIXME: load this properly */
     conf_set_str(conf, CONF_remote_cmd, "");
@@ -814,7 +978,11 @@ void load_open_settings(void *sesskey, Conf *conf)
     gppi(sesskey, "TelnetRet", 1, conf, CONF_telnet_newline);
     gppi(sesskey, "LocalEcho", AUTO, conf, CONF_localecho);
     gppi(sesskey, "LocalEdit", AUTO, conf, CONF_localedit);
+#if (defined PERSOPORT) && (!defined FDJ)
+    gpps(sesskey, "Answerback", "KiTTY", conf, CONF_answerback);
+#else
     gpps(sesskey, "Answerback", "PuTTY", conf, CONF_answerback);
+#endif
     gppi(sesskey, "AlwaysOnTop", 0, conf, CONF_alwaysontop);
     gppi(sesskey, "FullScreenOnAltEnter", 0, conf, CONF_fullscreenonaltenter);
     gppi(sesskey, "HideMousePtr", 0, conf, CONF_hide_mouseptr);
@@ -848,7 +1016,11 @@ void load_open_settings(void *sesskey, Conf *conf)
 		 / 1000
 #endif
 		 );
+#ifdef HYPERLINKPORT
+    gppi(sesskey, "ScrollbackLines", 10000, conf, CONF_savelines);
+#else
     gppi(sesskey, "ScrollbackLines", 2000, conf, CONF_savelines);
+#endif
     gppi(sesskey, "DECOriginMode", 0, conf, CONF_dec_om);
     gppi(sesskey, "AutoWrapMode", 1, conf, CONF_wrap_mode);
     gppi(sesskey, "LFImpliesCR", 0, conf, CONF_lfhascr);
@@ -860,14 +1032,45 @@ void load_open_settings(void *sesskey, Conf *conf)
     gppi(sesskey, "TermWidth", 80, conf, CONF_width);
     gppi(sesskey, "TermHeight", 24, conf, CONF_height);
     gppfont(sesskey, "Font", conf, CONF_font);
+#ifdef PERSOPORT
+    /*
+     * HACK: PuTTY-url
+     * Set font quality to cleartype on Windows Vista and higher
+     */
+    if (versioninfo.dwMajorVersion >= 6) {
+        gppi(sesskey, "FontQuality", FQ_CLEARTYPE, conf, CONF_font_quality);
+    } else {
+        gppi(sesskey, "FontQuality", FQ_DEFAULT, conf, CONF_font_quality);
+    }
+#else
     gppi(sesskey, "FontQuality", FQ_DEFAULT, conf, CONF_font_quality);
+#endif
     gppi(sesskey, "FontVTMode", VT_UNICODE, conf, CONF_vtmode);
     gppi(sesskey, "UseSystemColours", 0, conf, CONF_system_colour);
     gppi(sesskey, "TryPalette", 0, conf, CONF_try_palette);
     gppi(sesskey, "ANSIColour", 1, conf, CONF_ansi_colour);
     gppi(sesskey, "Xterm256Colour", 1, conf, CONF_xterm_256_colour);
     i = gppi_raw(sesskey, "BoldAsColour", 0); conf_set_int(conf, CONF_bold_style, i+1);
-
+#ifdef TUTTYPORT
+    gppi(sesskey, "WindowClosable", 1, conf, CONF_window_closable);
+    gppi(sesskey, "WindowMinimizable", 1, conf, CONF_window_minimizable);
+    gppi(sesskey, "WindowMaximizable", 1, conf, CONF_window_maximizable);
+    gppi(sesskey, "WindowHasSysMenu", 1, conf, CONF_window_has_sysmenu);
+    gppi(sesskey, "DisableBottomButtons", 1, conf, CONF_bottom_buttons);
+    gppi(sesskey, "BoldAsColourTest", 1, conf, CONF_bold_colour);
+    gppi(sesskey, "UnderlinedAsColour", 0, conf, CONF_under_colour);
+    gppi(sesskey, "SelectedAsColour", 0, conf, CONF_sel_colour);
+    for (i = 0; i < NCFGCOLOURS; i++) {
+	static const char *const defaults[NCFGCOLOURS] = {
+	    "187,187,187", "255,255,255", "0,0,0", "85,85,85", "0,0,0",
+	    "0,255,0", "0,0,0", "85,85,85", "187,0,0", "255,85,85",
+	    "0,187,0", "85,255,85", "187,187,0", "255,255,85", "0,0,187",
+	    "85,85,255", "187,0,187", "255,85,255", "0,187,187",
+	    "85,255,255", "187,187,187", "255,255,255", "187,187,187",
+	    "0,0,0", "0,0,0", "187,0,0", "0,187,0", "187,187,0", "0,0,187",
+	    "187,0,187", "0,187,187", "187,187,187", "0,0,0", "187,187,187"
+	};
+#else
     for (i = 0; i < 22; i++) {
 	static const char *const defaults[] = {
 	    "187,187,187", "255,255,255", "0,0,0", "85,85,85", "0,0,0",
@@ -876,6 +1079,7 @@ void load_open_settings(void *sesskey, Conf *conf)
 	    "85,85,255", "187,0,187", "255,85,255", "0,187,187",
 	    "85,255,255", "187,187,187", "255,255,255"
 	};
+#endif
 	char buf[20], *buf2;
 	int c0, c1, c2;
 	sprintf(buf, "Colour%d", i);
@@ -978,6 +1182,159 @@ void load_open_settings(void *sesskey, Conf *conf)
     gppi(sesskey, "SerialParity", SER_PAR_NONE, conf, CONF_serparity);
     gppi(sesskey, "SerialFlowControl", SER_FLOW_XONXOFF, conf, CONF_serflow);
     gpps(sesskey, "WindowClass", "", conf, CONF_winclass);
+#ifdef SCPORT
+    gppi(sesskey, "PKCS11SysLog", 0, conf, CONF_try_write_syslog );
+    gppi(sesskey, "AuthPKCS11", 0, conf, CONF_try_pkcs11_auth /*&cfg->try_pkcs11_auth*/);
+    gppfile(sesskey, "PKCS11LibFile", conf, CONF_pkcs11_libfile /*&cfg->pkcs11_libfile*/);
+    	conf_set_str( conf, CONF_pkcs11_token_label, "" ) ;
+	gpps(sesskey, "PKCS11TokenLabel", "", conf, CONF_pkcs11_token_label);
+	conf_set_str( conf, CONF_pkcs11_cert_label, "" ) ;
+	gpps(sesskey, "PKCS11CertLabel", "", conf, CONF_pkcs11_cert_label);
+#endif
+#ifdef RECONNECTPORT
+    gppi(sesskey, "WakeupReconnect", 0, conf, CONF_wakeup_reconnect /*&cfg->wakeup_reconnect*/);
+    gppi(sesskey, "FailureReconnect", 0, conf, CONF_failure_reconnect /*&cfg->failure_reconnect*/);
+#endif
+#if (defined IMAGEPORT) && (!defined FDJ)
+    gppi(sesskey, "BgOpacity", 50, conf, CONF_bg_opacity /*&cfg->bg_opacity*/);
+    gppi(sesskey, "BgSlideshow", 0, conf, CONF_bg_slideshow /*&cfg->bg_slideshow*/);
+    gppi(sesskey, "BgType", 0, conf, CONF_bg_type /*&cfg->bg_type*/);
+    gppfile(sesskey, "BgImageFile", conf, CONF_bg_image_filename /*&cfg->bg_image_filename*/);
+    gppi(sesskey, "BgImageStyle", 0, conf, CONF_bg_image_style /*&cfg->bg_image_style*/);
+    gppi(sesskey, "BgImageAbsoluteX", 0, conf, CONF_bg_image_abs_x /*&cfg->bg_image_abs_x*/);
+    gppi(sesskey, "BgImageAbsoluteY", 0, conf, CONF_bg_image_abs_y /*&cfg->bg_image_abs_y*/);
+    gppi(sesskey, "BgImagePlacement", 0, conf, CONF_bg_image_abs_fixed /*&cfg->bg_image_abs_fixed*/);
+#endif
+#ifdef URLPORT
+    gppi(sesskey, "CopyURLDetection", 0, conf, CONF_copy_clipbd_url_reg /*cfg->copy_clipbd_url_reg*/);
+#endif
+#ifdef HYPERLINKPORT
+	/*
+	 * HACK: PuttyTray / Nutty
+	 * Hyperlink stuff: Load hyperlink settings
+	 */
+	gppi(sesskey, "HyperlinkUnderline", 0, conf, CONF_url_underline);
+	gppi(sesskey, "HyperlinkUseCtrlClick", 1, conf, CONF_url_ctrl_click);
+	gppi(sesskey, "HyperlinkBrowserUseDefault", 1, conf, CONF_url_defbrowser);
+	gppfile(sesskey, "HyperlinkBrowser", conf, CONF_url_browser);
+	gppi(sesskey, "HyperlinkRegularExpressionUseDefault", 1, conf, CONF_url_defregex);
+
+#ifndef NO_HYPERLINK
+	gpps(sesskey, "HyperlinkRegularExpression", urlhack_default_regex, conf, CONF_url_regex);
+#endif
+#endif
+#ifdef IVPORT
+    /* Background */
+    for (i = 0; i < 4; i++) {
+	static const char *const defaults[] = {
+	    "100,100", "100,100", "100,100", "100,100"
+	};
+	static const int CONF_alphas_pc[4][2] = {
+	    CONF_alphas_pc_cursor_active,
+	    CONF_alphas_pc_cursor_inactive,
+	    CONF_alphas_pc_defauly_fg_active,
+	    CONF_alphas_pc_defauly_fg_inactive,
+	    CONF_alphas_pc_degault_bg_active,
+	    CONF_alphas_pc_degault_bg_inactive,
+	    CONF_alphas_pc_bg_active,
+	    CONF_alphas_pc_bg_inactive
+	};
+	char buf[16];
+	char *buf2;
+	int c0 = 100;
+	int c1 = 100;
+	sprintf(buf, "Alpha%d", i);
+	buf2 = gpps_raw(sesskey, buf, defaults[i]);
+	if (sscanf(buf2, "%d,%d", &c0, &c1)) {
+	    if (c0 > 100) {
+		c0 = 100;
+	    }
+	    if (c1 > 100) {
+		c1 = 100;
+	    }
+	    conf_set_int(conf, CONF_alphas_pc[i][0], c0);
+	    conf_set_int(conf, CONF_alphas_pc[i][1], c1);
+	}
+	sfree(buf2);
+    }
+    gppi(sesskey, "BackgroundWallpaper", 0, conf, CONF_bg_wallpaper);
+    gppi(sesskey, "BackgroundEffect", 0, conf, CONF_bg_effect);
+    gppfile(sesskey, "WallpaperFile", conf, CONF_wp_file);
+    gppi(sesskey, "WallpaperPosition", 0, conf, CONF_wp_position);
+    gppi(sesskey, "WallpaperAlign", 0, conf, CONF_wp_align);
+    gppi(sesskey, "WallpaperVerticalAlign", 0, conf, CONF_wp_valign);
+    gppi(sesskey, "WallpaperMoving", 0, conf, CONF_wp_moving);
+#endif
+#ifdef CYGTERMPORT
+    gppi(sesskey, "CygtermAltMetabit", 0, conf, CONF_alt_metabit);
+    gppi(sesskey, "CygtermAutoPath", 1, conf, CONF_cygautopath /*&cfg->cygautopath*/);
+    gppi(sesskey, "Cygterm64", 0, conf, CONF_cygterm64);
+    gpps(sesskey, "CygtermCommand", "", conf, CONF_cygcmd /*cfg->cygcmd, sizeof(cfg->cygcmd)*/);
+#endif
+#ifdef ZMODEMPORT
+    gppfile(sesskey, "rzCommand", conf, CONF_rzcommand /*cfg->rzcommand, sizeof(cfg->rzcommand)*/);
+    gpps(sesskey, "rzOptions", "-e -v", conf, CONF_rzoptions /*cfg->rzoptions, sizeof(cfg->rzoptions)*/);
+    gppfile(sesskey, "szCommand", conf, CONF_szcommand /*cfg->szcommand, sizeof(cfg->szcommand)*/);
+    gpps(sesskey, "szOptions", "-e -v", conf, CONF_szoptions /*cfg->szoptions, sizeof(cfg->szoptions)*/);
+    gpps(sesskey, "zDownloadDir", "C:\\", conf, CONF_zdownloaddir /*cfg->zdownloaddir, sizeof(cfg->zdownloaddir)*/);
+#endif
+#ifdef PERSOPORT
+    gppi(sesskey, "TransparencyValue", 0, conf, CONF_transparencynumber /*&cfg->transparencynumber*/ ) ;
+    if( conf_get_int( conf, CONF_transparencynumber) /*cfg->transparencynumber*/ < -1 ) conf_set_int( conf,CONF_transparencynumber,-1) /*cfg->transparencynumber = -1*/;
+    if( conf_get_int( conf, CONF_transparencynumber) /*cfg->transparencynumber*/ > 255 ) conf_set_int( conf,CONF_transparencynumber,255) /*cfg->transparencynumber = 255*/;
+    gppi(sesskey, "SendToTray", 0, conf, CONF_sendtotray /*&cfg->sendtotray*/);
+    gppi(sesskey, "Maximize", 0, conf, CONF_maximize /*&cfg->maximize*/);
+    gppi(sesskey, "Fullscreen", 0, conf, CONF_fullscreen /*&cfg->fullscreen*/);
+    gppi(sesskey, "SaveOnExit", 0, conf, CONF_saveonexit /*&cfg->saveonexit*/);
+    gppi(sesskey, "Icone", 1, conf, CONF_icone /*&cfg->icone*/);
+    //gpps(sesskey, "IconeFile", "", conf, CONF_iconefile /*cfg->iconefile, sizeof(cfg->iconefile)*/);
+    gppfile(sesskey, "IconeFile", conf, CONF_iconefile /*cfg->iconefile, sizeof(cfg->iconefile)*/);
+    gppfile(sesskey, "Scriptfile", conf, CONF_scriptfile /*&cfg->scriptfile*/);
+    Filename * fn = filename_from_str( "" ) ;
+    conf_set_filename(conf,CONF_scriptfile,fn);
+    filename_free(fn);
+    gpps(sesskey, "ScriptfileContent", "", conf, CONF_scriptfilecontent );
+    gpps(sesskey, "AntiIdle", "", conf, CONF_antiidle /*cfg->antiidle, sizeof(cfg->antiidle)*/);
+    gpps(sesskey, "LogTimestamp", "", conf, CONF_logtimestamp /*cfg->logtimestamp, sizeof(cfg->logtimestamp)*/);
+    gpps(sesskey, "Autocommand", "", conf, CONF_autocommand /*cfg->autocommand, sizeof(cfg->autocommand)*/);
+    gpps(sesskey, "AutocommandOut", "", conf, CONF_autocommandout /*cfg->autocommandout, sizeof(cfg->autocommandout)*/);
+    gpps(sesskey, "Folder", "", conf, CONF_folder /*cfg->folder, sizeof(cfg->folder)*/);
+    if( strlen(conf_get_str(conf, CONF_folder)) == 0 ) { conf_set_str( conf, CONF_folder, "Default" ) ; }
+    gppi(sesskey, "LogTimeRotation", 0, conf, CONF_logtimerotation /*&cfg->logtimerotation*/);
+    gppi(sesskey, "TermXPos", -1, conf, CONF_xpos /*&cfg->xpos*/);
+    gppi(sesskey, "TermYPos", -1, conf, CONF_ypos /*&cfg->ypos*/);
+    gppi(sesskey, "WindowState", 0, conf, CONF_windowstate /*&cfg->windowstate*/);
+    gppi(sesskey, "SaveWindowPos", 0, conf, CONF_save_windowpos /*&cfg->save_windowpos*/); /* BKG */
+    gppi(sesskey, "ForegroundOnBell", 0, conf, CONF_foreground_on_bell /*&cfg->foreground_on_bell*/);
+
+    char PassKey[1024] = "" ;
+    sprintf( PassKey, "%s%sKiTTY", conf_get_str(conf, CONF_host), conf_get_str(conf, CONF_termtype) ) ;
+    gpps(sesskey, "Password", "", conf, CONF_password );
+    char pst[128] ;
+    strcpy( pst, conf_get_str( conf, CONF_password ) ) ;
+    decryptstring( pst, PassKey ) ;
+    
+    if( strlen( pst ) > 0 ) {
+	FILE *fp ;
+	if( ( fp = fopen( "kitty.password", "r") ) != NULL ) { // Affichage en clair du password dans le fichier kitty.password si celui-ci existe
+		fclose( fp ) ;
+		if( ( fp = fopen( "kitty.password", "w" ) ) != NULL ) {
+			fprintf( fp, "%s", pst ) ;
+			fclose( fp ) ;
+			}
+		}
+	}
+    MASKPASS(pst);
+    conf_set_str( conf, CONF_password, pst ) ;
+    
+    memset(pst,0,strlen(pst));
+    gppi(sesskey, "CtrlTabSwitch", 0, conf, CONF_ctrl_tab_switch);
+    gpps(sesskey, "Comment", "", conf, CONF_comment );
+#endif
+#ifdef PORTKNOCKINGPORT
+	gpps(sesskey, "PortKnocking", "", conf, CONF_portknockingoptions );
+#endif
+
 }
 
 void do_defaults(char *session, Conf *conf)
@@ -1070,3 +1427,6 @@ void get_sesslist(struct sesslist *list, int allocate)
 	list->sessions = NULL;
     }
 }
+#ifdef PERSOPORT
+#include "../kitty_settings.c"
+#endif

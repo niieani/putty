@@ -14,7 +14,11 @@
  * have tiny little source modules containing nothing but
  * declarations of appname, for as long as I can...
  */
+#if (defined PERSOPORT) && (!defined FDJ)
+char *appname = "KiTTY";
+#else
 const char *const appname = "PuTTY";
+#endif
 
 #ifdef TELNET_DEFAULT
 const int be_default_protocol = PROT_TELNET;
@@ -28,5 +32,8 @@ Backend *backends[] = {
     &rlogin_backend,
     &raw_backend,
     &serial_backend,
+#ifdef CYGTERMPORT
+    &cygterm_backend,
+#endif
     NULL
 };

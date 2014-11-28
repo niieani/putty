@@ -9,6 +9,40 @@
 #include "ssh.h"
 #include "int64.h"
 
+#ifdef PERSOPORT
+
+// Flag pour le fonctionnement en mode "portable" (gestion par fichiers)
+extern int IniFileFlag ;
+
+// Flag permettant la gestion de l'arborscence (dossier=folder) dans le cas d'un savemode=dir
+extern int DirectoryBrowseFlag ;
+
+#include "../../kitty_crypt.c"
+#include "../../kitty_commun.h"
+
+int get_param( const char * val ) {
+	if( !stricmp( val, "INIFILE" ) ) return IniFileFlag ;
+	else if( !stricmp( val, "DIRECTORYBROWSE" ) ) return DirectoryBrowseFlag ;
+	return 0 ;
+	}
+
+void SetPasswordInConfig( char * password ) {
+	int len ;
+	if( password!=NULL ) {
+		len = strlen( password ) ;
+		if( len > 126 ) len = 126 ;
+		}
+	}
+	
+void SetUsernameInConfig( char * username ) {
+	int len ;
+	if( username!=NULL ) {
+		len = strlen( username ) ;
+		if( len > 126 ) len = 126 ;
+		}
+	}
+#endif
+
 char *get_ttymode(void *frontend, const char *mode) { return NULL; }
 
 int get_userpass_input(prompts_t *p, unsigned char *in, int inlen)
@@ -584,7 +618,7 @@ int do_eventsel_loop(HANDLE other_event)
     }
 
     sfree(handles);
-
+    
     if (n == WAIT_TIMEOUT) {
 	now = next;
     } else {
@@ -727,8 +761,18 @@ char *ssh_sftp_get_cmdline(char *prompt, int no_fds_ok)
 int main(int argc, char *argv[])
 {
     int ret;
-
+#ifdef PERSOPORT
+	IniFileFlag = 0 ;
+	DirectoryBrowseFlag = 0 ;
+	IsPortableMode() ;
+#endif
     ret = psftp_main(argc, argv);
 
     return ret;
 }
+
+/*
+Probleme sftp ne mache plus
+coince à la ligne     n = WaitForMultipleObjects(nallhandles, handles, FALSE, ticks);
+	dans la fonction int do_eventsel_loop(HANDLE other_event)
+*/

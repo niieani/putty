@@ -46,6 +46,31 @@ static int nevents = 0, negsize = 0;
 
 extern Conf *conf;		       /* defined in window.c */
 
+#ifdef PERSOPORT
+#include <math.h>
+#include <process.h>
+#include "kitty.h"
+#include "kitty_commun.h"
+#include "kitty_registry.h"
+
+extern char BuildVersionTime[256] ;
+
+void CenterDlgInParent(HWND hDlg) ;
+int get_param( const char * val ) ;
+void CheckVersionFromWebSite( HWND hwnd ) ;
+
+#ifndef TIMER_SLIDEBG
+//#define TIMER_SLIDEBG 12343
+#define TIMER_SLIDEBG 8703
+#endif
+
+int print_event_log( FILE * fp, int i ) {
+	if( i>= nevents ) return 0 ;
+	fprintf( fp, "%s\n", events[i] ) ;
+	return 1 ;
+	}
+
+#endif
 #define PRINTER_DISABLED_STRING "None (printing disabled)"
 
 void force_normal(HWND hwnd)
@@ -187,9 +212,244 @@ static int CALLBACK LicenceProc(HWND hwnd, UINT msg,
     return 0;
 }
 
+#if (defined PERSOPORT) && (!defined FDJ)
+
+//static const char MESSAGE[] = "";
+static const char MESSAGE[] = "                                                                                       KiTTY software is developed by Cyd for 9bis.com, copyright © 2006-2014, thanks to Leo for bcrypt and mini libraries, thanks to all contributors                                                                                       " ;
 static int CALLBACK AboutProc(HWND hwnd, UINT msg,
 			      WPARAM wParam, LPARAM lParam)
 {
+    char *str;
+    static HFONT hFontTitle ;
+    static HFONT hFontHover ;
+    static HFONT hFontNormal ;
+    static BOOL hover_email;
+    static BOOL capture_email;
+    static BOOL hover_webpage;
+    static BOOL capture_webpage;
+    static HCURSOR hCursorNormal;
+    static HCURSOR hCursorHover;
+    static int message_timer = 1000 ;
+    static char * mess = NULL ;
+	
+    switch (msg) {
+	case WM_INITDIALOG: {
+		char buffer[1024] ;
+		LOGFONT lf;
+
+#ifdef FDJ
+		/* Positionnement du ssh handler */
+		CreateSSHHandler() ;
+#endif
+		
+		//sprintf( buffer, "That's all folks ! version - %s", BuildVersionTime ) ;
+		sprintf( buffer, "KiTTY - %s", BuildVersionTime ) ;
+		SetDlgItemText(hwnd,IDA_VERSION,buffer);
+        
+		str = dupprintf("About %s That's all folks !", appname);
+		SetWindowText(hwnd, str);
+		sfree(str);
+        
+		if (hFontTitle == NULL) {
+			if (NULL == (hFontTitle = (HFONT)SendDlgItemMessage(hwnd,IDA_VERSION,WM_GETFONT,0,0)))
+				hFontTitle = GetStockObject(DEFAULT_GUI_FONT);
+			GetObject(hFontTitle,sizeof(LOGFONT),&lf);
+			lf.lfWeight = FW_BOLD;
+			hFontTitle = CreateFontIndirect(&lf);
+			}
+		//  Font setup
+		if (NULL == (hFontHover = (HFONT)SendDlgItemMessage(hwnd,IDC_EMAIL,WM_GETFONT,0,0)))
+			hFontHover = GetStockObject(DEFAULT_GUI_FONT);
+		GetObject(hFontHover,sizeof(LOGFONT),&lf);
+		lf.lfUnderline = TRUE;
+		hFontNormal = CreateFontIndirect(&lf);
+	
+		//  Cursor setup
+		hCursorNormal = LoadCursor( NULL, (LPCTSTR)MAKEINTRESOURCE(IDC_ARROW) ) ;
+		if (!(hCursorHover = LoadCursor( NULL, MAKEINTRESOURCE(IDC_HAND) )))
+			hCursorHover  = LoadCursor( GetModuleHandle(NULL), MAKEINTRESOURCE(IDC_HOVER) ) ;
+
+		hover_email = FALSE;
+		capture_email = FALSE;
+		hover_webpage = FALSE;
+		capture_webpage = FALSE;
+
+		CenterDlgInParent(hwnd);
+		
+		mess = MESSAGE ;
+		SetDlgItemText(hwnd,IDC_BAN,mess);
+		if( strlen( mess ) > 0 ) SetTimer(hwnd, message_timer, 100, NULL) ;
+		return 1; 
+		}
+		break ;
+		
+	case WM_TIMER:
+		if ((UINT_PTR)wParam == message_timer) {
+			mess++ ;
+			SetDlgItemText(hwnd,IDC_BAN,mess);
+			if( strlen( mess ) < strlen("                                                                                       ") ) mess = MESSAGE ;
+			}
+		break ;
+	
+	case WM_NCACTIVATE:
+		if (!(BOOL)wParam) { //  we're not active, clear hover states
+			hover_email = FALSE;
+			capture_email = FALSE;
+			hover_webpage = FALSE;
+			capture_webpage = FALSE;
+			InvalidateRect(GetDlgItem(hwnd,IDC_EMAIL),NULL,FALSE);
+			InvalidateRect(GetDlgItem(hwnd,IDC_WEBPAGE),NULL,FALSE);
+			}
+		return FALSE;
+	
+	case WM_CTLCOLORSTATIC: {
+		DWORD dwId = GetWindowLong((HWND)lParam,GWL_ID);
+		HDC hdc = (HDC)wParam;
+
+		if (dwId == IDA_VERSION) {
+			SetBkMode(hdc,TRANSPARENT);
+			SetTextColor(hdc,GetSysColor(COLOR_BTNTEXT));
+			SelectObject(hdc,hFontTitle);
+			return(LONG)GetSysColorBrush(COLOR_BTNFACE);
+			}
+		if (dwId == IDC_EMAIL || dwId == IDC_WEBPAGE) {
+			SetBkMode(hdc,TRANSPARENT);
+			if (GetSysColorBrush(26))
+				SetTextColor(hdc,GetSysColor(26));
+			else
+				SetTextColor(hdc,RGB(0,0,255));
+			if (dwId == IDC_EMAIL)
+				SelectObject(hdc,hover_email?hFontHover:hFontNormal);
+			else
+				SelectObject(hdc,hover_webpage?hFontHover:hFontNormal);
+			return(LONG)GetSysColorBrush(COLOR_BTNFACE);
+			}
+		}
+		break ;
+	
+	case WM_MOUSEMOVE:  {
+		POINT pt = { LOWORD(lParam), HIWORD(lParam) };
+		HWND hwndHover = ChildWindowFromPoint(hwnd,pt);
+		DWORD dwId = GetWindowLong(hwndHover,GWL_ID);
+
+		if (GetActiveWindow() == hwnd) {
+			if (wParam & MK_LBUTTON && !capture_email && !capture_webpage) {
+				;
+				}
+			else if (hover_email != (dwId == IDC_EMAIL) && !capture_webpage) {
+				hover_email = !hover_email;
+				InvalidateRect(GetDlgItem(hwnd,IDC_EMAIL),NULL,FALSE);
+				}
+			else if (hover_webpage != (dwId == IDC_WEBPAGE) && !capture_email) {
+				hover_webpage = !hover_webpage;
+				InvalidateRect(GetDlgItem(hwnd,IDC_WEBPAGE),NULL,FALSE);
+				}
+			SetCursor((hover_email || hover_webpage)?hCursorHover:hCursorNormal);
+			}
+		}
+		break;
+	
+	case WM_LBUTTONDOWN: {
+		POINT pt = { LOWORD(lParam), HIWORD(lParam) };
+		HWND hwndHover = ChildWindowFromPoint(hwnd,pt);
+		DWORD dwId = GetWindowLong(hwndHover,GWL_ID);
+
+		if (dwId == IDC_EMAIL) {
+			GetCapture();
+			hover_email = TRUE;
+			capture_email = TRUE;
+			InvalidateRect(GetDlgItem(hwnd,IDC_EMAIL),NULL,FALSE);
+			}
+		else if (dwId == IDC_WEBPAGE) {
+			GetCapture();
+			hover_webpage = TRUE;
+			capture_webpage = TRUE;
+			InvalidateRect(GetDlgItem(hwnd,IDC_WEBPAGE),NULL,FALSE);
+			}
+		SetCursor((hover_email || hover_webpage)?hCursorHover:hCursorNormal);
+		}
+		break;
+	
+	case WM_LBUTTONUP: {
+		POINT pt = { LOWORD(lParam), HIWORD(lParam) };
+		HWND hwndHover = ChildWindowFromPoint(hwnd,pt);
+		DWORD dwId = GetWindowLong(hwndHover,GWL_ID);
+
+		if (capture_email || capture_webpage) {
+			ReleaseCapture();
+			if (dwId == IDC_EMAIL && capture_email) {
+				ShellExecute(hwnd,"open","mailto:kitty@9bis.com",NULL,NULL,SW_SHOWNORMAL);
+				}
+			else if (dwId == IDC_WEBPAGE && capture_webpage) {
+				//ShellExecute(hwnd,"open","http://www.9bis.net/kitty/?zone=en",NULL,NULL,SW_SHOWNORMAL);
+				ShellExecute(hwnd,"open","http://kitty.9bis.com",NULL,NULL,SW_SHOWNORMAL);
+				}
+			capture_email = FALSE;
+			capture_webpage = FALSE;
+			}
+		SetCursor((hover_email || hover_webpage)?hCursorHover:hCursorNormal);
+		}
+		break;
+      
+      case WM_COMMAND:
+	switch (LOWORD(wParam)) {
+	  case IDOK:
+	  case IDCANCEL:
+		hover_email = FALSE;
+		capture_email = FALSE;
+		hover_webpage = FALSE;
+		capture_webpage = FALSE;
+	    KillTimer(hwnd, message_timer);
+	    EndDialog(hwnd, TRUE);
+	    return 0;
+	  case IDA_LICENCE:
+	    EnableWindow(hwnd, 0);
+	    DialogBox(hinst, MAKEINTRESOURCE(IDD_LICENCEBOX),
+		      hwnd, LicenceProc);
+	    EnableWindow(hwnd, 1);
+	    SetActiveWindow(hwnd);
+	    return 0;
+
+	  case IDA_WEB:
+	    /* Load web browser */
+	    CheckVersionFromWebSite( hwnd ) ;
+/*	  {
+		char buffer[1024]="", vers[1024]="" ;
+		int i ;
+		strcpy( vers, BuildVersionTime ) ;
+		for( i = 0 ; i < strlen( vers ) ; i ++ ) {
+			if( !(((vers[i]>='0')&&(vers[i]<='9'))||(vers[i]=='.')) ) { vers[i] = '\0' ; break ; }
+			}
+		sprintf( buffer, "http://www.9bis.net/kitty/check_update.php?version=%s", vers ) ;
+		ShellExecute(hwnd, "open", buffer, 0, 0, SW_SHOWDEFAULT);
+	  }*/
+	    return 0;
+	  case IDA_DON:
+	    /* Load web browser */
+	  {	char buffer[1024]="";
+		sprintf( buffer, "http://kitty.9bis.com/?page=Donation&zone=en" ) ;
+		ShellExecute(hwnd, "open", buffer, 0, 0, SW_SHOWDEFAULT);
+	  }
+	    return 0;
+	}
+	return 0;
+      case WM_CLOSE:
+	KillTimer(hwnd, message_timer);
+	EndDialog(hwnd, TRUE);
+	return 0;
+    }
+    return 0;
+}
+
+static int CALLBACK AboutProcOrig(HWND hwnd, UINT msg,
+			      WPARAM wParam, LPARAM lParam)
+{
+
+#else
+static int CALLBACK AboutProc(HWND hwnd, UINT msg,
+			      WPARAM wParam, LPARAM lParam)
+{
+#endif
     char *str;
 
     switch (msg) {
@@ -198,6 +458,9 @@ static int CALLBACK AboutProc(HWND hwnd, UINT msg,
 	SetWindowText(hwnd, str);
 	sfree(str);
 	SetDlgItemText(hwnd, IDA_TEXT1, appname);
+#ifdef PERSOPORT
+	if( get_param("PUTTY") ) SetDlgItemText(hwnd, IDA_TEXT2, "" ) ;
+#endif
 	SetDlgItemText(hwnd, IDA_VERSION, ver);
 	return 1;
       case WM_COMMAND:
@@ -376,6 +639,26 @@ static int CALLBACK GenericMainDlgProc(HWND hwnd, UINT msg,
 
     switch (msg) {
       case WM_INITDIALOG:
+#ifdef PERSOPORT
+      {
+	RECT rcClient ;
+	int h ;
+	GetWindowRect(hwnd, &rcClient) ;
+	
+	if( GetConfigBoxWindowHeight() > 0 ) { h = GetConfigBoxWindowHeight() ; }
+	else if( GetConfigBoxHeight() >= 100 ) { h = GetConfigBoxHeight() ; }
+	else {
+		if( GetConfigBoxHeight() <= 7 ) { h = ceil(12*7+354) ; }
+		else if( GetConfigBoxHeight() <= 15 ) { h = 515 ; }
+		else {
+			h = ceil( (584-530)*GetConfigBoxHeight()/(20-16)+310 ) ;
+			if( h < 515 ) h = 515 ; 
+			}
+		}
+	
+	MoveWindow( hwnd, rcClient.left, rcClient.top, rcClient.right-rcClient.left, h, TRUE ) ;
+	}
+#endif
 	dp.hwnd = hwnd;
 	create_controls(hwnd, "");     /* Open and Cancel buttons etc */
 	SetWindowText(hwnd, dp.wintitle);
@@ -607,7 +890,12 @@ static int CALLBACK GenericMainDlgProc(HWND hwnd, UINT msg,
 void modal_about_box(HWND hwnd)
 {
     EnableWindow(hwnd, 0);
+#if (defined PERSOPORT) && (!defined FDJ)
+	if( get_param("PUTTY") ) DialogBox(hinst, MAKEINTRESOURCE(IDD_ABOUTBOX), hwnd, AboutProcOrig);
+	else DialogBox(hinst, MAKEINTRESOURCE(IDD_KITTYABOUT), hwnd, AboutProc);
+#else
     DialogBox(hinst, MAKEINTRESOURCE(IDD_ABOUTBOX), hwnd, AboutProc);
+#endif
     EnableWindow(hwnd, 1);
     SetActiveWindow(hwnd);
 }
@@ -661,6 +949,11 @@ int do_config(void)
     winctrl_cleanup(&ctrls_base);
     dp_cleanup(&dp);
 
+#ifdef PERSOPORT
+	GotoConfigDirectory() ;
+	if( ret==0 ) SaveRegistryKey( ) ; // On sort de la config box par ESCAPE ou cancel
+	else _beginthread( routine_SaveRegistryKey, 0, (void*)NULL ) ; // On démarre une session
+#endif
     return ret;
 }
 
@@ -697,8 +990,16 @@ int do_reconfig(HWND hwnd, int protcfginfo)
     if (!ret)
 	conf_copy_into(conf, backup_conf);
 
-    conf_free(backup_conf);
+#if (defined IMAGEPORT) && (!defined FDJ)
+	if( get_param("BACKGROUNDIMAGE") && (conf_get_int(conf,CONF_bg_slideshow)/*cfg.bg_slideshow*/!=conf_get_int(backup_conf,CONF_bg_slideshow)/*backup_cfg.bg_slideshow*/) ) {
+		KillTimer( hwnd, TIMER_SLIDEBG ) ;
+		if((conf_get_int(conf,CONF_bg_type)/*cfg.bg_type*/!=0)&&(conf_get_int(conf,CONF_bg_slideshow)/*cfg.bg_slideshow*/>0)) 
+			SetTimer(hwnd, TIMER_SLIDEBG, (int)(conf_get_int(conf,CONF_bg_slideshow)/*cfg.bg_slideshow*/*1000), NULL) ;
+		InvalidateRect(hwnd, NULL, TRUE);
+		}
+#endif
 
+    conf_free(backup_conf);
     return ret;
 }
 
@@ -740,10 +1041,30 @@ void showeventlog(HWND hwnd)
     SetActiveWindow(logbox);
 }
 
+#if (defined PERSOPORT) && (!defined FDJ)
+void showabout(HWND hwnd)
+{
+	/*
+	char buffer[1024] ;
+    DialogBox(hinst, MAKEINTRESOURCE(IDD_ABOUTBOX), hwnd, AboutProc);
+	sprintf( buffer, "That's all folks ! version\r\n%s", BuildVersionTime ) ;
+    MessageBox( hwnd, buffer, "Info", MB_OK ) ;
+	*/
+	if( get_param("PUTTY") ) DialogBox(hinst, MAKEINTRESOURCE(IDD_ABOUTBOX), hwnd, AboutProcOrig);
+	else {
+		DialogBox(hinst, MAKEINTRESOURCE(IDD_KITTYABOUT), hwnd, AboutProc);
+		if( GetIconeFlag() > 0 ) {
+			time_t ttime = time( NULL ) % GetNumberOfIcons() ;
+			SendMessage( hwnd, WM_SETICON, ICON_BIG, (LPARAM)LoadIcon( hinst, MAKEINTRESOURCE(IDI_MAINICON_0 + ttime ) ) );
+			}
+		}
+}
+#else
 void showabout(HWND hwnd)
 {
     DialogBox(hinst, MAKEINTRESOURCE(IDD_ABOUTBOX), hwnd, AboutProc);
 }
+#endif
 
 int verify_ssh_host_key(void *frontend, char *host, int port, char *keytype,
                         char *keystr, char *fingerprint,
@@ -795,6 +1116,10 @@ int verify_ssh_host_key(void *frontend, char *host, int port, char *keytype,
 	char *text = dupprintf(wrongmsg, appname, keytype, fingerprint,
 			       appname);
 	char *caption = dupprintf(mbtitle, appname);
+#ifdef PERSOPORT
+	if( GetAutoStoreSSHKeyFlag() ) { mbret=IDYES ; }
+	else 
+#endif
 	mbret = message_box(text, caption,
 			    MB_ICONWARNING | MB_YESNOCANCEL | MB_DEFBUTTON3,
 			    HELPCTXID(errors_hostkey_changed));
@@ -803,6 +1128,9 @@ int verify_ssh_host_key(void *frontend, char *host, int port, char *keytype,
 	sfree(caption);
 	if (mbret == IDYES) {
 	    store_host_key(host, port, keytype, keystr);
+#ifdef PERSOPORT
+	    SaveRegistryKey() ;
+#endif
 	    return 1;
 	} else if (mbret == IDNO)
 	    return 1;
@@ -810,6 +1138,10 @@ int verify_ssh_host_key(void *frontend, char *host, int port, char *keytype,
 	int mbret;
 	char *text = dupprintf(absentmsg, keytype, fingerprint, appname);
 	char *caption = dupprintf(mbtitle, appname);
+#ifdef PERSOPORT
+	if( GetAutoStoreSSHKeyFlag() ) { mbret=IDYES ; }
+	else 
+#endif
 	mbret = message_box(text, caption,
 			    MB_ICONWARNING | MB_YESNOCANCEL | MB_DEFBUTTON3,
 			    HELPCTXID(errors_hostkey_absent));
@@ -818,6 +1150,9 @@ int verify_ssh_host_key(void *frontend, char *host, int port, char *keytype,
 	sfree(caption);
 	if (mbret == IDYES) {
 	    store_host_key(host, port, keytype, keystr);
+#ifdef PERSOPORT
+	    SaveRegistryKey() ;
+#endif
 	    return 1;
 	} else if (mbret == IDNO)
 	    return 1;

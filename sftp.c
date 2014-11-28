@@ -58,8 +58,14 @@ static struct sftp_packet *sftp_pkt_init(int pkt_type)
     pkt = snew(struct sftp_packet);
     pkt->data = NULL;
     pkt->savedpos = -1;
+#ifdef PERFPORT
+    pkt->maxlen = 0;
+    pkt->length = 4;
+    sftp_pkt_ensure(pkt, 4); 
+#else
     pkt->length = 0;
     pkt->maxlen = 0;
+#endif
     sftp_pkt_adduint32(pkt, 0); /* length field will be filled in later */
     sftp_pkt_addbyte(pkt, (unsigned char) pkt_type);
     return pkt;
@@ -465,7 +471,6 @@ int fxp_init(void)
     pktout = sftp_pkt_init(SSH_FXP_INIT);
     sftp_pkt_adduint32(pktout, SFTP_PROTO_VERSION);
     sftp_send(pktout);
-
     pktin = sftp_recv();
     if (!pktin) {
 	fxp_internal_error("could not connect");

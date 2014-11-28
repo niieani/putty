@@ -51,7 +51,14 @@ static void source(char *src);
 static void rsource(char *src);
 static void sink(char *targ, char *src);
 
+#if (defined PERSOPORT) && (!defined FDJ)
+char *appname = "PSCP";
+#else
 const char *const appname = "PSCP";
+#endif
+#ifdef PORTKNOCKINGPORT
+int ManagePortKnocking( char* host, char *portstr ) ;
+#endif
 
 /*
  * The maximum amount of queued data we accept before we stop and
@@ -526,6 +533,10 @@ static void do_cmd(char *host, char *user, char *cmd)
     conf_set_int(conf, CONF_nopty, TRUE);
 
     back = &ssh_backend;
+
+#ifdef PORTKNOCKINGPORT
+    ManagePortKnocking(conf_get_str(conf,CONF_host),conf_get_str(conf,CONF_portknockingoptions));
+#endif
 
     err = back->init(NULL, &backhandle, conf,
 		     conf_get_str(conf, CONF_host),
@@ -2305,7 +2316,11 @@ void cmdline_error(char *p, ...)
  * Main program. (Called `psftp_main' because it gets called from
  * *sftp.c; bit silly, I know, but it had to be called _something_.)
  */
+#ifdef PSCPPORT
+extern __declspec(dllexport) int psftp_main(int argc, char *argv[])
+#else
 int psftp_main(int argc, char *argv[])
+#endif
 {
     int i;
 

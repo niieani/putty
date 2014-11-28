@@ -27,6 +27,11 @@ typedef struct terminal_tag Terminal;
 #include "network.h"
 #include "misc.h"
 
+#ifdef PERSOPORT
+void debug_log( const char *fmt, ...) ;
+int switch_private_key_flag( void ) ;
+#endif
+
 /*
  * Fingerprints of the PGP master keys that can be used to establish a trust
  * path between an executable and other files.
@@ -104,6 +109,9 @@ typedef struct terminal_tag Terminal;
 
 #define ATTR_NARROW  0x800000U
 #define ATTR_WIDE    0x400000U
+#ifdef TUTTYPORT
+#define ATTR_SELECTED 0x02000000U
+#endif
 #define ATTR_BOLD    0x040000U
 #define ATTR_UNDER   0x080000U
 #define ATTR_REVERSE 0x100000U
@@ -136,6 +144,21 @@ typedef struct terminal_tag Terminal;
 #define ATTR_DEFFG   (256 << ATTR_FGSHIFT)
 #define ATTR_DEFBG   (258 << ATTR_BGSHIFT)
 #define ATTR_DEFAULT (ATTR_DEFFG | ATTR_DEFBG)
+
+#ifdef HYPERLINKPORT 
+/*
+ * HACK: PuttyTray / Nutty
+ * Hyperlink stuff: define
+ */
+#define CHAR_MASK    0x000000FFUL
+extern const char* urlhack_default_regex ;
+extern const char* urlhack_liberal_regex ;
+enum {
+	URLHACK_UNDERLINE_ALWAYS,
+	URLHACK_UNDERLINE_HOVER,
+	URLHACK_UNDERLINE_NEVER
+};
+#endif
 
 struct sesslist {
     int nsessions;
@@ -240,6 +263,7 @@ typedef enum {
 #define PK_ISKEYPAD(k)	((k) >= PK_PF1 && (k) <= PK_KPENTER)
 #define PK_ISFKEY(k)	((k) >= PK_F1 && (k) <= PK_F20)
 
+
 enum {
     VT_XWINDOWS, VT_OEMANSI, VT_OEMONLY, VT_POORMAN, VT_UNICODE
 };
@@ -306,6 +330,9 @@ enum {
 enum {
     /* Protocol back ends. (CONF_protocol) */
     PROT_RAW, PROT_TELNET, PROT_RLOGIN, PROT_SSH,
+#ifdef CYGTERMPORT
+    PROT_CYGTERM,
+#endif
     /* PROT_SERIAL is supported on a subset of platforms, but it doesn't
      * hurt to define it globally. */
     PROT_SERIAL
@@ -334,6 +361,12 @@ enum {
     FUNKY_VT400,
     FUNKY_VT100P,
     FUNKY_SCO
+#ifdef TUTTYPORT
+    ,
+    FUNKY_ATT513,
+    FUNKY_ATT4410,
+    FUNKY_SUNXTERM
+#endif
 };
 
 enum {
@@ -413,6 +446,37 @@ enum {
     ADDRTYPE_UNSPEC, ADDRTYPE_IPV4, ADDRTYPE_IPV6, ADDRTYPE_NAME
 };
 
+#ifdef IVPORT
+/* Background */
+typedef enum {
+    ALPHA_CURSOR, ALPHA_DEFAULT_FG, ALPHA_DEFAULT_BG, ALPHA_BG
+};
+
+typedef enum {
+    BG_NONE, BG_FILE, BG_FILE_DESKTOP, BG_DESKTOP
+};
+
+typedef enum {
+    BG_PLANE, BG_GLASS, BG_DOUBLE_GLASS
+};
+
+typedef enum {
+    BG_ACTIVE, BG_INACTIVE
+};
+
+enum {
+    WP_FILL, WP_FIT, WP_STRETCH, WP_TILE, WP_FIX
+};
+
+enum {
+    WP_LEFT, WP_CENTER, WP_RIGHT
+};
+
+enum {
+    WP_TOP, WP_MIDDLE, WP_BOTTOM
+};
+#endif
+
 struct backend_tag {
     const char *(*init) (void *frontend_handle, void **backend_handle,
 			 Conf *conf, char *host, int port, char **realhost,
@@ -458,7 +522,11 @@ extern const int be_default_protocol;
  * Name of this particular application, for use in the config box
  * and other pieces of text.
  */
+#if (defined PERSOPORT) && (!defined FDJ)
+extern char *appname;
+#else
 extern const char *const appname;
+#endif
 
 /*
  * Some global flags denoting the type of application.
@@ -589,8 +657,8 @@ void get_clip(void *frontend, wchar_t **, int *);
 void optimised_move(void *frontend, int, int, int);
 void set_raw_mouse_mode(void *frontend, int);
 void connection_fatal(void *frontend, char *, ...);
-void nonfatal(char *, ...);
 void fatalbox(char *, ...);
+void nonfatal(char *, ...);
 void modalfatalbox(char *, ...);
 #ifdef macintosh
 #pragma noreturn(fatalbox)
@@ -855,13 +923,130 @@ void cleanup_exit(int);
     X(INT, NONE, shadowboldoffset) \
     X(INT, NONE, crhaslf) \
     X(STR, NONE, winclass) \
+/* #ifdef SCPORT */ \
+	X(INT, NONE, try_write_syslog)            /* check box (not persistent) */ \
+	X(INT, NONE, try_pkcs11_auth)             /* check box */ \
+	X(FILENAME, NONE, pkcs11_libfile)         /* token lib */ \
+	X(STR, NONE, sclib)                       /* sc's owned struct */ \
+	X(STR, NONE, pkcs11_token_label)          /* token label */ \
+	X(STR, NONE, pkcs11_cert_label)           /* cert label */ \
+/* #endif */ \
+/* #ifdef PERSOPORT */ \
+	X(INT, NONE, bcdelay) \
+	X(INT, NONE, initdelay) \
+	X(INT, NONE, transparencynumber) \
+	X(INT, NONE, sendtotray) \
+	X(INT, NONE, maximize) \
+	X(INT, NONE, fullscreen) \
+	X(INT, NONE, saveonexit) \
+	X(INT, NONE, icone) \
+	X(FILENAME, NONE, iconefile) \
+	X(STR, NONE, folder) \
+	X(STR, NONE, password) \
+	X(STR, NONE, autocommand) \
+	X(STR, NONE, autocommandout) \
+	X(STR, NONE, sessionname) \
+	X(STR, NONE, antiidle) \
+	X(STR, NONE, logtimestamp) \
+	X(INT, NONE, logtimerotation) \
+	X(FILENAME, NONE, scriptfile) \
+	X(STR, NONE, scriptfilecontent) \
+	X(INT, NONE, save_windowpos) \
+	X(INT, NONE, xpos) \
+	X(INT, NONE, ypos) \
+	X(INT, NONE, windowstate) \
+	X(INT, NONE, foreground_on_bell) \
+        X(INT, NONE, ctrl_tab_switch) /* switch PuTTY windows with CtrlTab */ \
+	X(STR, NONE, comment) \
+/* #endif */ \
+/* #ifdef IVPORT */ \
+    /* Background */ \
+    X(INT, NONE, alphas_pc_cursor_active) \
+    X(INT, NONE, alphas_pc_cursor_inactive) \
+    X(INT, NONE, alphas_pc_defauly_fg_active) \
+    X(INT, NONE, alphas_pc_defauly_fg_inactive) \
+    X(INT, NONE, alphas_pc_degault_bg_active) \
+    X(INT, NONE, alphas_pc_degault_bg_inactive) \
+    X(INT, NONE, alphas_pc_bg_active) \
+    X(INT, NONE, alphas_pc_bg_inactive) \
+    X(INT, NONE, bg_wallpaper) \
+    X(INT, NONE, bg_effect) \
+    X(FILENAME, NONE, wp_file) \
+    X(INT, NONE, wp_position) \
+    X(INT, NONE, wp_align) \
+    X(INT, NONE, wp_valign) \
+    X(INT, NONE, wp_moving) \
+/* #endif */ \
+/* #ifdef CYGTERMPORT */ \
+    /* Cygterm options */ \
+    X(INT, NONE, cygautopath) \
+    X(INT, NONE, cygterm64) \
+    X(STR, NONE, cygcmd) \
+    X(INT, NONE, alt_metabit)  		       /* set meta instead of escape */ \
+/* #endif */ \
+/* #if (defined IMAGEPORT) && (!defined FDJ) */\
+    X(INT, NONE, bg_opacity) \
+    X(INT, NONE, bg_slideshow) \
+    X(INT, NONE, bg_type)                   /* 0=solid 1=wallpaper 2=bitmap */ \
+    X(FILENAME, NONE, bg_image_filename) \
+    X(INT, NONE, bg_image_style)            /* 0=tile 1=center 2=stretch 3=(x,y) 4=Blanck background 5=Stretch Plus*/ \
+    X(INT, NONE, bg_image_abs_x) \
+    X(INT, NONE, bg_image_abs_y) \
+    X(INT, NONE, bg_image_abs_fixed)       /* 0=fixed to desktop, 1=fixed to term wnd */ \
+/* #endif */ \
+/* #ifdef URLPORT */ \
+    X(INT, NONE, copy_clipbd_url_reg) \
+/* #endif */ \
+/* #ifdef RECONNECTPORT */ \
+    X(INT, NONE, wakeup_reconnect) \
+    X(INT, NONE, failure_reconnect) \
+/* #endif */ \
+/* #ifdef HYPERLINKPORT */ \
+    /* 						\
+     * HACK: PuttyTray / Nutty  		\
+     * Hyperlink stuff: Underline settings 	\
+     */ 					\
+    X(INT, NONE, url_ctrl_click) \
+    X(INT, NONE, url_underline) \
+    X(INT, NONE, url_defbrowser) \
+    X(INT, NONE, url_defregex) \
+    X(FILENAME, NONE, url_browser) \
+    X(STR, NONE, url_regex) \
+/* #endif */ \
+/* #ifdef TUTTYPORT */ \
+    X(INT, NONE, window_closable) \
+    X(INT, NONE, window_minimizable) \
+    X(INT, NONE, window_maximizable) \
+    X(INT, NONE, window_has_sysmenu) \
+    X(INT, NONE, bottom_buttons) \
+    X(INT, NONE, bold_colour) \
+    X(INT, NONE, under_colour) \
+    X(INT, NONE, sel_colour) \
+/* #endif */ \
+/* #ifdef ZMODEMPORT */ \
+    /* Z modem options */ \
+    X(FILENAME, NONE, rzcommand) \
+    X(STR, NONE, rzoptions) \
+    X(FILENAME, NONE, szcommand) \
+    X(STR, NONE, szoptions) \
+    X(STR, NONE, zdownloaddir) \
+/* #endif */ \
+/* #ifdef PORTKNOCKINGPORT */ \
+    /* port knocking options */ \
+    X(STR, NONE, portknockingoptions) \
+/* #endif */ \
+
 
 /* Now define the actual enum of option keywords using that macro. */
 #define CONF_ENUM_DEF(valtype, keytype, keyword) CONF_ ## keyword,
 enum config_primary_key { CONFIG_OPTIONS(CONF_ENUM_DEF) N_CONFIG_OPTIONS };
 #undef CONF_ENUM_DEF
 
+#ifdef PERSOPORT
+#define NCFGCOLOURS 34
+#else
 #define NCFGCOLOURS 22 /* number of colours in CONF_colours above */
+#endif
 
 /* Functions handling configuration structures. */
 Conf *conf_new(void);		       /* create an empty configuration */
@@ -995,7 +1180,11 @@ char *term_get_ttymode(Terminal *term, const char *mode);
 int term_get_userpass_input(Terminal *term, prompts_t *p,
 			    unsigned char *in, int inlen);
 
+#ifdef KEYMAPPINGPORT
+int format_arrow_key(char *buf, Terminal *term, int xkey, int ctrl, int alt);
+#else
 int format_arrow_key(char *buf, Terminal *term, int xkey, int ctrl);
+#endif
 
 /*
  * Exports from logging.c.
@@ -1049,6 +1238,15 @@ extern Backend telnet_backend;
  * Exports from ssh.c.
  */
 extern Backend ssh_backend;
+
+#ifdef CYGTERMPORT
+/*
+ * Exports from cygterm.c.
+ */
+extern Backend cygterm_backend;
+void cygterm_setup_config_box(struct controlbox *b, int midsession);
+
+#endif
 
 /*
  * Exports from ldisc.c.
@@ -1402,6 +1600,22 @@ void timer_change_notify(unsigned long next);
 #endif
 
 /* SURROGATE PAIR */
+
+
+#ifndef HIGH_SURROGATE_START
+#define HIGH_SURROGATE_START 0xd800
+#endif
+#ifndef HIGH_SURROGATE_END
+#define HIGH_SURROGATE_END 0xdbff
+#endif
+#ifndef LOW_SURROGATE_START
+#define LOW_SURROGATE_START 0xdc00
+#endif
+#ifndef LOW_SURROGATE_END
+#define LOW_SURROGATE_END 0xdfff
+#endif
+
+
 #ifndef IS_HIGH_SURROGATE
 #define HIGH_SURROGATE_START 0xd800
 #define HIGH_SURROGATE_END 0xdbff

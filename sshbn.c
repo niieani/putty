@@ -856,7 +856,9 @@ Bignum modpow(Bignum base_in, Bignum exp, Bignum mod)
      * The most significant word of mod needs to be non-zero. It
      * should already be, but let's make sure.
      */
+#ifndef PERSOPORT
     assert(mod[mod[0]] != 0);
+#endif
 
     /*
      * mod had better be odd, or we can't do Montgomery multiplication
@@ -879,7 +881,9 @@ Bignum modpow(Bignum base_in, Bignum exp, Bignum mod)
     len = mod[0];
     r = bn_power_2(BIGNUM_INT_BITS * len);
     inv = modinv(mod, r);
+#ifndef PERSOPORT
     assert(inv); /* cannot fail, since mod is odd and r is a power of 2 */
+#endif
 
     /*
      * Multiply the base by r mod n, to get it into Montgomery

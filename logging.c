@@ -24,6 +24,119 @@ struct LogContext {
 
 static Filename *xlatlognam(Filename *s, char *hostname, struct tm *tm);
 
+#ifdef PERSOPORT
+int get_param( const char * val ) ;
+int mkdir(const char *path, int mode);
+int insert( char * ch, const char * c, const int ipos ) ;
+int del( char * ch, const int start, const int length ) ;
+int poss( const char * c, const char * ch ) ;
+int posi( const char * c, const char * ch, const int ipos ) ;
+
+// Test l'existance du répertoire, sinon le crée
+void test_dir( Filename *filename ) {
+	int i ; char * name ;
+	if( filename == NULL ) return ;
+	if( strlen( filename_to_str(filename) ) == 0 ) return ;
+	
+	if( ( name = (char*) malloc( strlen( filename_to_str(filename) ) + 1 ) ) != NULL ) {
+		strcpy( name, filename_to_str(filename) ) ;
+		for( i=strlen(name)-1; i>=0 ; i-- ) 
+			{ if( (name[i] == '\\') || (name[i]=='/' ) ) break ; }
+		if( i > 0 ) {
+			name[i] = '\0';
+			mkdir( name, 777 ) ;
+			}
+		free( name ) ;
+		}
+	}
+
+/* Procedure perso de conversion date (time_t) -> char* */
+size_t m_strftime( char *s, size_t max, const char *format, const struct tm *tm) {
+	char * nfor, b[128] ;
+	int p, i = 1 ;
+	size_t res ;
+	
+	if( (nfor = (char*) malloc( strlen( format ) + 1024 )) == NULL ) return 0 ;
+	strcpy( nfor, format ) ;
+	
+	sprintf( b, "%lu", mktime((struct tm*)tm) ) ;
+	while( (p=posi( "%s", nfor, i )) > 0 ) {
+		if( p==1 ) { del(nfor,p,2) ; insert(nfor,b,p); }
+		else if( nfor[p-2] != '%' ) { del(nfor,p,2) ; insert(nfor,b,p); }
+		i = p + 1 ;
+		}
+	while( (p=posi( "%t", nfor, i )) > 0 ) {
+		if( p==1 ) { del(nfor,p,2) ; insert(nfor,"	",p); }
+		else if( nfor[p-2] != '%' ) { del(nfor,p,2) ; insert(nfor,"	",p); }
+		i = p + 1 ;
+		}
+
+	res = strftime( s, max, nfor, tm ) ;
+	
+	free( nfor ) ;
+	return res ;
+	}
+	
+/* Procedure perso de conversion date (struct _SYSTEMTIME) -> char* */
+size_t t_strftime( char *s, size_t max, const char *format, const SYSTEMTIME st ) {
+	char * nfor, b[128] ;
+	int p, i = 1 ;
+	struct tm tm ;
+	size_t res = 0 ;
+	
+	tm.tm_sec = st.wSecond ;
+	tm.tm_min = st.wMinute ;
+	tm.tm_hour = st.wHour ;
+	tm.tm_mday = st.wDay ;
+	tm.tm_mon = st.wMonth - 1 ;
+	tm.tm_year = st.wYear - 1900 ;
+	tm.tm_mday = st.wDayOfWeek - 1 ;
+	tm.tm_yday = 0 ;
+	tm.tm_isdst = 0 ;
+
+	if( (nfor = (char*) malloc( strlen( format ) + 1024 )) == NULL ) return 0 ;
+	strcpy( nfor, format ) ;
+
+	sprintf( b, "%u", st.wMilliseconds ) ;
+	while( (p=posi( "%f", nfor, i )) > 0 ) {
+		if( p==1 ) { del(nfor,p,2) ; insert(nfor,b,p); }
+		else if( nfor[p-2] != '%' ) { del(nfor,p,2) ; insert(nfor,b,p); }
+		i = p + 1 ;
+		}
+
+	res = m_strftime( s, max, nfor, &tm ) ;
+	
+	free( nfor ) ;
+
+	return res ;
+	}
+
+int log_writetimestamp( struct LogContext *ctx ) {
+// "%m/%d/%Y %H:%M:%S "
+	if( strlen(conf_get_str(ctx->conf,CONF_logtimestamp) /*ctx->cfg.logtimestamp*/)==0 )  return 1 ;
+	char buf[128] = "" ;
+
+	if( poss( "%f", conf_get_str(ctx->conf,CONF_logtimestamp) /*ctx->cfg.logtimestamp*/ ) ) {
+		SYSTEMTIME sysTime ;
+		GetLocalTime( &sysTime ) ;
+		t_strftime( buf, 127, conf_get_str(ctx->conf,CONF_logtimestamp) /*ctx->cfg.logtimestamp*/, sysTime ) ;
+		}
+	else {
+		time_t temps = time( 0 ) ;
+		struct tm tm = * localtime( &temps ) ;
+		m_strftime( buf, 127, conf_get_str(ctx->conf,CONF_logtimestamp) /*ctx->cfg.logtimestamp*/, &tm ) ;
+		}
+	
+	fwrite(buf, 1, strlen(buf), ctx->lgfp);
+	return 1;
+	}
+
+static int timestamp_newline = 1 ;
+static int timestamp_newfile = 0 ;
+
+void timestamp_change_filename( void ) { timestamp_newfile = 1 ; timestamp_newline = 1 ; }
+#endif
+
 /*
  * Internal wrapper function which must be called for _all_ output
  * to the log file. It takes care of opening the log file if it
@@ -37,6 +150,13 @@ static void logwrite(struct LogContext *ctx, void *data, int len)
      * to one of L_OPENING, L_OPEN or L_ERROR. Hence we process all of
      * those three _after_ processing L_CLOSED.
      */
+#ifdef PERSOPORT
+	if( timestamp_newfile ) {
+		if (ctx->state == L_OPEN) { logfclose(ctx);}
+		timestamp_newfile = 0 ;
+		}
+#endif
+
     if (ctx->state == L_CLOSED)
 	logfopen(ctx);
 
@@ -44,6 +164,13 @@ static void logwrite(struct LogContext *ctx, void *data, int len)
 	bufchain_add(&ctx->queue, data, len);
     } else if (ctx->state == L_OPEN) {
 	assert(ctx->lgfp);
+#ifdef PERSOPORT
+	if( !get_param("PUTTY") ) {
+		if( timestamp_newline ) { log_writetimestamp( ctx ) ; timestamp_newline = 0 ; }
+		char * c = (char*)(data+len-1) ;
+		if( c[0]=='\n' ) timestamp_newline = 1 ;
+	}
+#endif
 	if (fwrite(data, 1, len, ctx->lgfp) < (size_t)len) {
 	    logfclose(ctx);
 	    ctx->state = L_ERROR;
@@ -160,6 +287,9 @@ void logfopen(void *handle)
     ctx->currlogfilename = 
         xlatlognam(conf_get_filename(ctx->conf, CONF_logfilename),
                    conf_get_str(ctx->conf, CONF_host), &tm);
+#ifdef PERSOPORT
+	test_dir( /*&*/ctx->currlogfilename ) ;
+#endif
 
     ctx->lgfp = f_open(ctx->currlogfilename, "r", FALSE);  /* file already present? */
     if (ctx->lgfp) {
@@ -402,7 +532,11 @@ void log_reconfig(void *handle, Conf *conf)
  */
 static Filename *xlatlognam(Filename *src, char *hostname, struct tm *tm)
 {
+#ifdef PERSOPORT
+    char buf[100], *bufp;
+#else
     char buf[10], *bufp;
+#endif
     int size;
     char *buffer;
     int buflen, bufsize;
@@ -435,7 +569,13 @@ static Filename *xlatlognam(Filename *src, char *hostname, struct tm *tm)
 		size = strftime(buf, sizeof(buf), "%H%M%S", tm);
 		break;
 	      case 'h':
+#ifdef PERSOPORT
+	      strcpy(buf,hostname) ;
+	      int i ; while( (i=poss(":",buf))>0 ) { buf[i-1]='-' ;	}
+	      bufp=buf ;
+#else
 		bufp = hostname;
+#endif
 		size = strlen(bufp);
 		break;
 	      default:

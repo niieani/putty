@@ -11,6 +11,27 @@
 #include "putty.h"
 #include "terminal.h"
 
+#ifdef EXTENDEDMOUSEPORT
+#include "charset.h"
+#include "SBCS.C"
+#include "UTF8.C"
+#include "SBCSDAT.C"
+#include "FROMUCS.C"
+#include "SLOOKUP.C"
+#endif
+#ifdef PERSOPORT
+int get_param( const char * val ) ;
+#endif
+#ifdef HYPERLINKPORT
+/*
+ * HACK: PuttyTray / Nutty
+ */ 
+#include "urlhack.h"
+#endif
+#ifdef ZMODEMPORT
+int xyz_ReceiveData(Terminal *term, const u_char *buffer, int len);
+#endif
+
 #define poslt(p1,p2) ( (p1).y < (p2).y || ( (p1).y == (p2).y && (p1).x < (p2).x ) )
 #define posle(p1,p2) ( (p1).y < (p2).y || ( (p1).y == (p2).y && (p1).x <= (p2).x ) )
 #define poseq(p1,p2) ( (p1).y == (p2).y && (p1).x == (p2).x )
@@ -750,7 +771,9 @@ static void readrle(struct buf *b, termline *ldata,
 
 	    int count = hdr + 1;
 	    while (count--) {
+#ifndef PERSOPORT
 		assert(n < ldata->cols);
+#endif
 		readliteral(b, ldata->chars + n, ldata, &state);
 		n++;
 	    }
@@ -1013,7 +1036,9 @@ static termline *lineptr(Terminal *term, int y, int lineno, int screen)
     } else {
 	int altlines = 0;
 
+#ifndef PERSOPORT
 	assert(!screen);
+#endif
 
 	if (term->erase_to_scrollback &&
 	    term->alt_which && term->alt_screen) {
@@ -1258,9 +1283,7 @@ static void power_on(Terminal *term, int clear)
 void term_update(Terminal *term)
 {
     Context ctx;
-
     term->window_update_pending = FALSE;
-
     ctx = get_ctx(term->frontend);
     if (ctx) {
 	int need_sbar_update = term->seen_disp_event;
@@ -1269,7 +1292,6 @@ void term_update(Terminal *term)
 	    term->seen_disp_event = 0;
 	    need_sbar_update = TRUE;
 	}
-
 	if (need_sbar_update)
 	    update_sbar(term);
 	do_paint(term, ctx, TRUE);
@@ -1574,12 +1596,22 @@ Terminal *term_init(Conf *myconf, struct unicode_data *ucsdata,
 
     term->bidi_cache_size = 0;
     term->pre_bidi_cache = term->post_bidi_cache = NULL;
+#ifdef HYPERLINKPORT
+	/*
+	 * HACK: PuttyTray / Nutty
+	 */
+	if( !get_param("PUTTY") && get_param("HYPERLINK") ) term->url_update = TRUE;
+#endif
 
     /* FULL-TERMCHAR */
     term->basic_erase_char.chr = CSET_ASCII | ' ';
     term->basic_erase_char.attr = ATTR_DEFAULT;
     term->basic_erase_char.cc_next = 0;
     term->erase_char = term->basic_erase_char;
+#ifdef ZMODEMPORT
+    term->xyz_transfering = 0;
+    term->xyz_Internals = NULL;
+#endif
 
     return term;
 }
@@ -4777,6 +4809,49 @@ static void do_paint(Terminal *term, Context ctx, int may_optimise)
 #endif /* OPTIMISE_SCROLL */
     termchar *newline;
 
+#ifdef HYPERLINKPORT
+	/*
+	 * HACK: PuttyTray / Nutty
+	 * Hyperlink stuff: Find visible hyperlinks
+	 *
+	 * TODO: We should find out somehow that the stuff on screen has changed since last
+	 *       paint. How to do it?
+	 */
+	int urlhack_underline_always = conf_get_int(term->conf, CONF_url_underline) == URLHACK_UNDERLINE_ALWAYS;
+
+	int urlhack_underline =
+		conf_get_int(term->conf, CONF_url_underline) == URLHACK_UNDERLINE_ALWAYS ||
+		(conf_get_int(term->conf, CONF_url_underline) == URLHACK_UNDERLINE_HOVER && (!conf_get_int(term->conf, CONF_url_ctrl_click) || urlhack_is_ctrl_pressed())) ? 1 : 0;
+
+	int urlhack_is_link = 0, urlhack_hover_current = 0;
+	int urlhack_toggle_x = term->cols, urlhack_toggle_y = term->rows;
+	int urlhack_region_index = 0;
+	text_region urlhack_region;
+
+	if( !get_param("PUTTY") && get_param("HYPERLINK") ) {
+		if (term->url_update) {
+			urlhack_reset();
+			for (i = 0; i < term->rows; i++) {
+				termline *lp = lineptr(term->disptop + i);
+			
+				for (j = 0; j < term->cols; j++) {
+					urlhack_putchar((char)(lp->chars[j].chr & CHAR_MASK));
+					}
+				unlineptr(lp);
+				}
+			urlhack_go_find_me_some_hyperlinks(term->cols);
+			}
+		urlhack_region = urlhack_get_link_region(urlhack_region_index);
+		urlhack_toggle_x = urlhack_region.x0;
+		urlhack_toggle_y = urlhack_region.y0;
+		if (urlhack_underline_always)
+			urlhack_hover_current = 1;
+		else
+			urlhack_hover_current = urlhack_is_in_this_link_region(urlhack_region, urlhack_mouse_old_x, urlhack_mouse_old_y);
+		}
+	/* HACK: PuttyTray / Nutty : END */
+#endif
+
     chlen = 1024;
     ch = snewn(chlen, wchar_t);
 
@@ -4929,6 +5004,49 @@ static void do_paint(Terminal *term, Context ctx, int may_optimise)
 	    }
 	    if (j < term->cols-1 && d[1].chr == UCSWIDE)
 		tattr |= ATTR_WIDE;
+#ifdef HYPERLINKPORT
+ 		/*
+ 		 * HACK: PuttyTray / Nutty
+ 		 * Hyperlink stuff: Underline link regions if user has configured us so
+ 		 */
+		if( !get_param("PUTTY") && get_param("HYPERLINK") ) {
+		if (urlhack_underline) {
+			if (j == urlhack_toggle_x && i == urlhack_toggle_y) {
+				urlhack_is_link = urlhack_is_link == 1 ? 0 : 1;
+
+				// Find next bound for the toggle
+				
+				if (urlhack_is_link == 1) {
+					urlhack_toggle_x = urlhack_region.x1;
+					urlhack_toggle_y = urlhack_region.y1;
+
+					if (urlhack_toggle_x == term->cols - 1) {
+						// Handle special case where link ends at the last char of the row
+						urlhack_toggle_y++;
+						urlhack_toggle_x = 0;
+					}
+				}
+				else {
+					urlhack_region = urlhack_get_link_region(++urlhack_region_index);
+
+					if (urlhack_underline_always)
+						urlhack_hover_current = 1;
+					else
+						urlhack_hover_current = urlhack_is_in_this_link_region(urlhack_region, urlhack_mouse_old_x, urlhack_mouse_old_y);
+
+					urlhack_toggle_x = urlhack_region.x0;
+					urlhack_toggle_y = urlhack_region.y0;
+				}
+			}
+			if (urlhack_is_link == 1 && urlhack_hover_current == 1) {	
+				tattr |= ATTR_UNDER;
+			}
+
+			term->url_update = 0;
+		}
+		}
+ 		/* HACK: PuttyTray / Nutty : END */
+#endif
 
 	    /* Video reversing things */
 	    if (term->selstate == DRAGGING || term->selstate == SELECTED) {
@@ -4940,8 +5058,12 @@ static void do_paint(Terminal *term, Context ctx, int may_optimise)
 				posPlt(scrpos, term->selend));
 	    } else
 		selected = FALSE;
+#ifdef TUTTYPORT
+	    tattr = (tattr ^ rv ^ (selected ? ATTR_SELECTED : 0));
+#else
 	    tattr = (tattr ^ rv
 		     ^ (selected ? ATTR_REVERSE : 0));
+#endif
 
 	    /* 'Real' blinking ? */
 	    if (term->blink_is_real && (tattr & ATTR_BLINK)) {
@@ -5236,6 +5358,12 @@ void term_scroll(Terminal *term, int rel, int where)
     int olddisptop = term->disptop;
     int shift;
 #endif /* OPTIMISE_SCROLL */
+#ifdef HYPERLINKPORT
+	/*
+	 * HACK: PuttyTray / Nutty
+	 */
+		if( !get_param("PUTTY") && get_param("HYPERLINK") ) term->url_update = TRUE;	
+#endif
 
     term->disptop = (rel < 0 ? 0 : rel > 0 ? sbtop : term->disptop) + where;
     if (term->disptop < sbtop)
@@ -5302,7 +5430,12 @@ static void clip_addchar(clip_workbuf *b, wchar_t chr, int attr)
     b->bufpos++;
 }
 
+#ifdef HYPERLINKPORT
+static void clipme(Terminal *term, pos top, pos bottom, int rect, int desel,
+    void (*output)(void *, wchar_t *, int *, int, int))
+#else
 static void clipme(Terminal *term, pos top, pos bottom, int rect, int desel)
+#endif
 {
     clip_workbuf buf;
     int old_top_x;
@@ -5474,7 +5607,11 @@ void term_copyall(Terminal *term)
     top.x = 0;
     bottom.y = find_last_nonempty_line(term, screen);
     bottom.x = term->cols;
+#ifdef HYPERLINKPORT
+    clipme(term, top, bottom, 0, TRUE, write_clip);
+#else
     clipme(term, top, bottom, 0, TRUE);
+#endif
 }
 
 /*
@@ -5768,6 +5905,13 @@ void term_do_paste(Terminal *term)
     get_clip(term->frontend, NULL, NULL);
 }
 
+#ifdef HYPERLINKPORT
+void urlhack_launch_url_helper( void *frontend, wchar_t * data, int *attr, int len, int must_deselect) {
+	//urlhack_launch_url( (!conf_get_int(term->conf, CONF_url_defbrowser) ? conf_get_filename(term->conf, CONF_url_browser)->path : NULL), (const char *)data) ;
+	//urlhack_launch_url( (!conf_get_int(term->conf, CONF_url_defbrowser) ? conf_get_filename(term->conf, CONF_url_browser)->path : NULL), (const char *)data,0) ;
+}
+#endif
+
 void term_mouse(Terminal *term, Mouse_Button braw, Mouse_Button bcooked,
 		Mouse_Action a, int x, int y, int shift, int ctrl, int alt)
 {
@@ -5813,8 +5957,11 @@ void term_mouse(Terminal *term, Mouse_Button braw, Mouse_Button bcooked,
     }
 
     selpoint.x = x;
+#ifdef HYPERLINKPORT
+    if( !get_param("PUTTY") && get_param("HYPERLINK") ) unlineptr(ldata);
+#else
     unlineptr(ldata);
-
+#endif
     /*
      * If we're in the middle of a selection operation, we ignore raw
      * mouse mode until it's done (we must have been not in raw mouse
@@ -5851,8 +5998,21 @@ void term_mouse(Terminal *term, Mouse_Button braw, Mouse_Button bcooked,
 	    }
 	    switch (a) {
 	      case MA_DRAG:
+#ifdef HYPERLINKPORT
+	      	if( !get_param("PUTTY") && get_param("HYPERLINK") ) {
+		if (term->xterm_mouse == 1) {// HACK: ADDED FOR hyperlink stuff
+			unlineptr(ldata); 
+			return;
+			}
+		}
+	        else {
 		if (term->xterm_mouse == 1)
 		    return;
+		}
+#else
+		if (term->xterm_mouse == 1)
+		    return;
+#endif
 		encstate += 0x20;
 		break;
 	      case MA_RELEASE:
@@ -5862,8 +6022,33 @@ void term_mouse(Terminal *term, Mouse_Button braw, Mouse_Button bcooked,
 		term->mouse_is_down = 0;
 		break;
 	      case MA_CLICK:
-		if (term->mouse_is_down == braw)
+#ifdef HYPERLINKPORT
+	        if( !get_param("PUTTY") && get_param("HYPERLINK") ) {
+#ifdef PUTTYXPORT
+		if (term->mouse_is_down == braw && braw != MBT_WHEEL_UP && braw != MBT_WHEEL_DOWN) {// HACK: ADDED FOR hyperlink stuff  // MORE HACKING (@unphased: allow sequences of mouse wheel up and mouse wheel down to pass through)
+#else
+		if (term->mouse_is_down == braw) {// HACK: ADDED FOR hyperlink stuff
+#endif
+			unlineptr(ldata); 
+			return;
+			}	      
+		}
+		else {
+#ifdef PUTTYXPORT
+		if (term->mouse_is_down == braw && braw != MBT_WHEEL_UP && braw != MBT_WHEEL_DOWN) // MORE HACKING (@unphased: allow sequences of mouse wheel up and mouse wheel down to pass through)
+#else
+	        if (term->mouse_is_down == braw)
+#endif
 		    return;
+		}
+#else
+#ifdef PUTTYXPORT
+		if (term->mouse_is_down == braw && braw != MBT_WHEEL_UP && braw != MBT_WHEEL_DOWN) // MORE HACKING (@unphased: allow sequences of mouse wheel up and mouse wheel down to pass through)
+#else
+		if (term->mouse_is_down == braw)
+#endif
+		    return;
+#endif
 		term->mouse_is_down = braw;
 		break;
 	      default: break;	       /* placate gcc warning about enum use */
@@ -5885,9 +6070,13 @@ void term_mouse(Terminal *term, Mouse_Button braw, Mouse_Button bcooked,
 	    }
 	    ldisc_send(term->ldisc, abuf, len, 0);
 	}
+#ifdef HYPERLINKPORT
+	if( !get_param("PUTTY") && get_param("HYPERLINK") ) {
+		unlineptr(ldata); // HACK: ADDED FOR hyperlink stuff
+		}
+#endif
 	return;
     }
-
     /*
      * Set the selection type (rectangular or normal) at the start
      * of a selection attempt, from the state of Alt.
@@ -5900,13 +6089,67 @@ void term_mouse(Terminal *term, Mouse_Button braw, Mouse_Button bcooked,
     if (term->selstate == NO_SELECTION) {
 	term->seltype = default_seltype;
     }
-
     if (bcooked == MBT_SELECT && a == MA_CLICK) {
 	deselect(term);
 	term->selstate = ABOUT_TO;
 	term->seltype = default_seltype;
 	term->selanchor = selpoint;
 	term->selmode = SM_CHAR;
+#ifdef HYPERLINKPORT
+	/*
+	 * HACK: PuttyTray / Nutty
+	 * Hyperlink stuff: Check whether the click coordinates are inside link
+	 * region, if so -> copy url to temporary buffer and launch it. Delete
+	 * the temporary buffer.
+	 */
+	} else if( !get_param("PUTTY") && get_param("HYPERLINK") && bcooked == MBT_SELECT && a == MA_RELEASE && term->selstate == ABOUT_TO) {
+	deselect(term);
+	term->selstate = NO_SELECTION;
+
+	if ((!conf_get_int(term->conf, CONF_url_ctrl_click) || (conf_get_int(term->conf, CONF_url_ctrl_click) && urlhack_is_ctrl_pressed())) && urlhack_is_in_link_region(x, y)) {
+		int i;
+		char *linkbuf = NULL;
+		text_region region = urlhack_get_link_bounds(x, y);
+
+		if (region.y0 == region.y1) {
+			linkbuf = snewn(region.x1 - region.x0 + 2, char);
+			
+			for (i = region.x0; i < region.x1; i++) {
+				linkbuf[i - region.x0] = (char)(ldata->chars[i].chr);
+			}
+
+			linkbuf[i - region.x0] = '\0';
+		}
+		else {
+			termline *urldata = lineptr(region.y0 + term->disptop);
+			int linklen, pos = region.x0, row = region.y0 + term->disptop;
+
+			linklen = (term->cols - region.x0) +
+				((region.y1 - region.y0 - 1) * term->cols) + region.x1 + 1;
+
+			linkbuf = snewn(linklen, char);
+
+			for (i = region.x0; i < linklen + region.x0; i++) {
+				linkbuf[i - region.x0] = (char)(urldata->chars[i % term->cols].chr);
+				
+				// Jump to next line?
+				if (((i + 1) % term->cols) == 0) {
+					row++;
+					urldata = lineptr(row);
+				}
+			}
+
+			linkbuf[linklen - 1] = '\0';
+			unlineptr(urldata);
+		}
+		
+		urlhack_launch_url(!conf_get_int(term->conf, CONF_url_defbrowser) ? conf_get_filename(term->conf, CONF_url_browser)->path : NULL, linkbuf);
+		
+		sfree(linkbuf);
+	}
+	/* HACK: PuttyTray / Nutty : END */
+#endif
+
     } else if (bcooked == MBT_SELECT && (a == MA_2CLK || a == MA_3CLK)) {
 	deselect(term);
 	term->selmode = (a == MA_2CLK ? SM_WORD : SM_LINE);
@@ -5917,8 +6160,21 @@ void term_mouse(Terminal *term, Mouse_Button braw, Mouse_Button bcooked,
 	sel_spread(term);
     } else if ((bcooked == MBT_SELECT && a == MA_DRAG) ||
 	       (bcooked == MBT_EXTEND && a != MA_RELEASE)) {
+#ifdef HYPERLINKPORT
+	if( !get_param("PUTTY") && get_param("HYPERLINK") ) {
+	if (term->selstate == ABOUT_TO && poseq(term->selanchor, selpoint)) { // HACK: ADDED FOR HYPERLINK STUFF
+		unlineptr(ldata);
+		return;
+	}
+	}
+	else {
 	if (term->selstate == ABOUT_TO && poseq(term->selanchor, selpoint))
 	    return;
+	       }
+#else
+	if (term->selstate == ABOUT_TO && poseq(term->selanchor, selpoint))
+	    return;
+#endif
 	if (bcooked == MBT_EXTEND && a != MA_DRAG &&
 	    term->selstate == SELECTED) {
 	    if (term->seltype == LEXICOGRAPHIC) {
@@ -5989,7 +6245,11 @@ void term_mouse(Terminal *term, Mouse_Button braw, Mouse_Button bcooked,
 	     * data to the clipboard.
 	     */
 	    clipme(term, term->selstart, term->selend,
+#ifdef HYPERLINKPORT
+		   (term->seltype == RECTANGULAR), FALSE, write_clip);
+#else
 		   (term->seltype == RECTANGULAR), FALSE);
+#endif
 	    term->selstate = SELECTED;
 	} else
 	    term->selstate = NO_SELECTION;
@@ -6012,7 +6272,11 @@ void term_mouse(Terminal *term, Mouse_Button braw, Mouse_Button bcooked,
     term_update(term);
 }
 
+#ifdef KEYMAPPINGPORT
+int format_arrow_key(char *buf, Terminal *term, int xkey, int modifier, int alt)
+#else
 int format_arrow_key(char *buf, Terminal *term, int xkey, int ctrl)
+#endif
 {
     char *p = buf;
 
@@ -6035,6 +6299,32 @@ int format_arrow_key(char *buf, Terminal *term, int xkey, int ctrl)
 	if (!term->app_keypad_keys)
 	    app_flg = 0;
 #endif
+#ifdef KEYMAPPINGPORT
+	if( !get_param("PUTTY") ) {
+		if (modifier == 1 && alt == 1)
+		p += sprintf((char *) p, "\x1B[1;10%c", xkey); /* Alt-Shift */
+		else if (alt == 1)
+		p += sprintf((char *) p, "\x1B[1;3%c", xkey); /* Alt */
+		else if (modifier == 1)
+		p += sprintf((char *) p, "\x1B[1;2%c", xkey); /* Shift */
+		else if (modifier)
+		p += sprintf((char *) p, "\x1B[1;5%c", xkey); /* Control */
+		else if (app_flg)
+		p += sprintf((char *) p, "\x1BO%c", xkey); /* Application mode */
+		else
+		p += sprintf((char *) p, "\x1B[%c", xkey); /* Normal */
+		}
+	else {
+	/* Useful mapping of Ctrl-arrows */
+	if (modifier)
+	    app_flg = !app_flg;
+
+	if (app_flg)
+	    p += sprintf((char *) p, "\x1BO%c", xkey);
+	else
+	    p += sprintf((char *) p, "\x1B[%c", xkey);
+		}
+#else
 	/* Useful mapping of Ctrl-arrows */
 	if (ctrl)
 	    app_flg = !app_flg;
@@ -6043,6 +6333,8 @@ int format_arrow_key(char *buf, Terminal *term, int xkey, int ctrl)
 	    p += sprintf((char *) p, "\x1BO%c", xkey);
 	else
 	    p += sprintf((char *) p, "\x1B[%c", xkey);
+#endif
+
     }
 
     return p - buf;
@@ -6129,6 +6421,13 @@ int term_ldisc(Terminal *term, int option)
 
 int term_data(Terminal *term, int is_stderr, const char *data, int len)
 {
+
+#ifdef ZMODEMPORT
+	if ( get_param( "ZMODEM" ) && term->xyz_transfering && !is_stderr)
+		{ return xyz_ReceiveData(term, (const u_char *) data, len) ; }
+	else
+	{
+#endif
     bufchain_add(&term->inbuf, data, len);
 
     if (!term->in_term_out) {
@@ -6142,6 +6441,15 @@ int term_data(Terminal *term, int is_stderr, const char *data, int len)
 	if (term->selstate != DRAGGING)
 	    term_out(term);
 	term->in_term_out = FALSE;
+#ifdef HYPERLINKPORT
+	/*
+	 * HACK: PuttyTray / Nutty
+	 */
+	if( !get_param("PUTTY") && get_param("HYPERLINK") ) term->url_update = TRUE;
+#endif
+#ifdef ZMODEMPORT
+    }
+#endif
     }
 
     /*
@@ -6335,3 +6643,22 @@ int term_get_userpass_input(Terminal *term, prompts_t *p,
 	return +1; /* all done */
     }
 }
+
+
+
+
+/*
+WINDOW.C  3848
+
+term_mouse(term, b, translate_button(b), MA_DRAG,
+		       TO_CHR_X(X_POS(lParam)),
+		       TO_CHR_Y(Y_POS(lParam)), wParam & MK_SHIFT,
+		       wParam & MK_CONTROL, is_alt_pressed());
+
+
+Fonction term_mouse dans TERMINAL.C
+Ligne 1298:     A priori le problème est dans term_update(term) ;  
+
+Fonction term_update dans TERMINAL.C
+Ligne 1297: 		do_paint(term, ctx, TRUE);
+*/

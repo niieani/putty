@@ -13,6 +13,10 @@
 #include "putty.h"
 #include "dialog.h"
 
+#ifdef SCPORT
+#include <dirent.h>
+#endif
+
 int ctrl_path_elements(char *path)
 {
     int i = 1;
@@ -423,6 +427,20 @@ union control *ctrl_fontsel(struct controlset *s,char *label,char shortcut,
     return c;
 }
 
+#ifdef ZMODEMPORT
+union control *ctrl_directorysel(struct controlset *s,char *label,char shortcut,
+			    char *title,
+			    intorptr helpctx, handler_fn handler,
+			    intorptr context)
+{
+    union control *c = ctrl_new(s, CTRL_DIRECTORYSELECT, helpctx, handler, context);
+    c->fileselect.label = label ? dupstr(label) : NULL;
+    c->fileselect.shortcut = shortcut;
+    c->fileselect.title = dupstr(title);
+    return c;
+}
+#endif
+
 union control *ctrl_tabdelay(struct controlset *s, union control *ctrl)
 {
     union control *c = ctrl_new(s, CTRL_TABDELAY, P(NULL), NULL, P(NULL));
@@ -469,6 +487,11 @@ void ctrl_free(union control *ctrl)
       case CTRL_FILESELECT:
 	sfree(ctrl->fileselect.title);
 	break;
+#ifdef ZMODEMPORT
+      case CTRL_DIRECTORYSELECT:
+	sfree(ctrl->fileselect.title);
+	break;
+#endif
     }
     sfree(ctrl);
 }
