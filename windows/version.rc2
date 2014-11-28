@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Standard Windows version information.
  * (For inclusion in other .rc files with appropriate macro definitions.)
  * FIXME: This file is called '.rc2' rather than '.rc' to avoid MSVC trying
@@ -101,7 +101,7 @@ FILEFLAGS	0x0L
 #if defined DEBUG
 		| VS_FF_DEBUG
 #endif
-#if defined SNAPSHOT
+#if defined SNAPSHOT || defined PRERELEASE
 		| VS_FF_PRERELEASE
 #elif !defined RELEASE
 		| VS_FF_PRIVATEBUILD
@@ -131,7 +131,7 @@ BEGIN
 #endif
 #if (!defined SNAPSHOT) && (!defined RELEASE)
 	    /* Only if VS_FF_PRIVATEBUILD. */
-	    VALUE "PrivateBuild",	VERSION_TEXT /* NBI */
+	    VALUE "PrivateBuild",	TEXTVER /* NBI */
 #endif
 	END
     END
@@ -141,7 +141,3 @@ BEGIN
 	VALUE "Translation", 0x809, 1200
     END
 END
-
-#undef VERSION_TEXT
-#undef BASE_VERSION
-#undef BINARY_VERSION

@@ -1,4 +1,4 @@
-/*
+ï»¿/*
  * winsftp.c: the Windows-specific parts of PSFTP and PSCP.
  */
 
@@ -527,7 +527,10 @@ int do_eventsel_loop(HANDLE other_event)
     int skcount;
     unsigned long now = GETTICKCOUNT();
 
-    if (run_timers(now, &next)) {
+    if (toplevel_callback_pending()) {
+        ticks = 0;
+        next = now;
+    } else if (run_timers(now, &next)) {
 	then = now;
 	now = GETTICKCOUNT();
 	if (now - then > next - then)
@@ -536,6 +539,8 @@ int do_eventsel_loop(HANDLE other_event)
 	    ticks = next - now;
     } else {
 	ticks = INFINITE;
+        /* no need to initialise next here because we can never get
+         * WAIT_TIMEOUT */
     }
 
     handles = handle_get_events(&nhandles);
@@ -618,7 +623,9 @@ int do_eventsel_loop(HANDLE other_event)
     }
 
     sfree(handles);
-    
+
+    run_toplevel_callbacks();
+
     if (n == WAIT_TIMEOUT) {
 	now = next;
     } else {
@@ -773,6 +780,6 @@ int main(int argc, char *argv[])
 
 /*
 Probleme sftp ne mache plus
-coince à la ligne     n = WaitForMultipleObjects(nallhandles, handles, FALSE, ticks);
+coince ï¿½ la ligne     n = WaitForMultipleObjects(nallhandles, handles, FALSE, ticks);
 	dans la fonction int do_eventsel_loop(HANDLE other_event)
 */

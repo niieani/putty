@@ -1,4 +1,4 @@
-#ifndef PUTTY_PUTTY_H
+﻿#ifndef PUTTY_PUTTY_H
 #define PUTTY_PUTTY_H
 
 #include <stddef.h>		       /* for wchar_t */
@@ -277,6 +277,7 @@ enum {
     KEX_DHGROUP14,
     KEX_DHGEX,
     KEX_RSA,
+    KEX_ECDH,
     KEX_MAX
 };
 
@@ -669,7 +670,7 @@ void begin_session(void *frontend);
 void sys_cursor(void *frontend, int x, int y);
 void request_paste(void *frontend);
 void frontend_keypress(void *frontend);
-void ldisc_update(void *frontend, int echo, int edit);
+void frontend_echoedit_update(void *frontend, int echo, int edit);
 /* It's the backend's responsibility to invoke this at the start of a
  * connection, if necessary; it can also invoke it later if the set of
  * special commands changes. It does not need to invoke it at session
@@ -906,12 +907,22 @@ void cleanup_exit(int);
     X(INT, NONE, sshbug_maxpkt2) \
     X(INT, NONE, sshbug_ignore2) \
     X(INT, NONE, sshbug_winadj) \
+    X(INT, NONE, sshbug_chanreq) \
     /*                                                                \
      * ssh_simple means that we promise never to open any channel     \
      * other than the main one, which means it can safely use a very  \
      * large window in SSH-2.                                         \
      */ \
     X(INT, NONE, ssh_simple) \
+    X(INT, NONE, ssh_connection_sharing) \
+    X(INT, NONE, ssh_connection_sharing_upstream) \
+    X(INT, NONE, ssh_connection_sharing_downstream) \
+    /*
+     * ssh_manual_hostkeys is conceptually a set rather than a
+     * dictionary: the string subkeys are the important thing, and the
+     * actual values to which those subkeys map are all "".
+     */ \
+    X(STR, STR, ssh_manual_hostkeys) \
     /* Options for pterm. Should split out into platform-dependent part. */ \
     X(INT, NONE, stamp_utmp) \
     X(INT, NONE, login_shell) \
@@ -1207,7 +1218,8 @@ struct logblank_t {
 void log_packet(void *logctx, int direction, int type,
 		char *texttype, const void *data, int len,
 		int n_blanks, const struct logblank_t *blanks,
-		const unsigned long *sequence);
+		const unsigned long *sequence,
+                unsigned downstream_id, const char *additional_log_text);
 
 /*
  * Exports from testback.c
@@ -1255,6 +1267,7 @@ void *ldisc_create(Conf *, Terminal *, Backend *, void *, void *);
 void ldisc_configure(void *, Conf *);
 void ldisc_free(void *);
 void ldisc_send(void *handle, char *buf, int len, int interactive);
+void ldisc_echoedit_update(void *handle);
 
 /*
  * Exports from ldiscucs.c.
@@ -1589,6 +1602,36 @@ int run_timers(unsigned long now, unsigned long *next);
 void timer_change_notify(unsigned long next);
 
 /*
+ * Exports from callback.c.
+ *
+ * This provides a method of queuing function calls to be run at the
+ * earliest convenience from the top-level event loop. Use it if
+ * you're deep in a nested chain of calls and want to trigger an
+ * action which will probably lead to your function being re-entered
+ * recursively if you just call the initiating function the normal
+ * way.
+ *
+ * Most front ends run the queued callbacks by simply calling
+ * run_toplevel_callbacks() after handling each event in their
+ * top-level event loop. However, if a front end doesn't have control
+ * over its own event loop (e.g. because it's using GTK) then it can
+ * instead request notifications when a callback is available, so that
+ * it knows to ask its delegate event loop to do the same thing. Also,
+ * if a front end needs to know whether a callback is pending without
+ * actually running it (e.g. so as to put a zero timeout on a select()
+ * call) then it can call toplevel_callback_pending(), which will
+ * return true if at least one callback is in the queue.
+ */
+typedef void (*toplevel_callback_fn_t)(void *ctx);
+void queue_toplevel_callback(toplevel_callback_fn_t fn, void *ctx);
+void run_toplevel_callbacks(void);
+int toplevel_callback_pending(void);
+
+typedef void (*toplevel_callback_notify_fn_t)(void *frontend);
+void request_callback_notifications(toplevel_callback_notify_fn_t notify,
+                                    void *frontend);
+
+/*
  * Define no-op macros for the jump list functions, on platforms that
  * don't support them. (This is a bit of a hack, and it'd be nicer to
  * localise even the calls to those functions into the Windows front
@@ -1600,28 +1643,15 @@ void timer_change_notify(unsigned long next);
 #endif
 
 /* SURROGATE PAIR */
-
-
-#ifndef HIGH_SURROGATE_START
-#define HIGH_SURROGATE_START 0xd800
-#endif
-#ifndef HIGH_SURROGATE_END
-#define HIGH_SURROGATE_END 0xdbff
-#endif
-#ifndef LOW_SURROGATE_START
-#define LOW_SURROGATE_START 0xdc00
-#endif
-#ifndef LOW_SURROGATE_END
-#define LOW_SURROGATE_END 0xdfff
-#endif
-
-
 #ifndef IS_HIGH_SURROGATE
 #define HIGH_SURROGATE_START 0xd800
 #define HIGH_SURROGATE_END 0xdbff
 #define LOW_SURROGATE_START 0xdc00
 #define LOW_SURROGATE_END 0xdfff
 
+/* These macros exist in the Windows API, so the environment may
+ * provide them. If not, define them in terms of the above. */
+#ifndef IS_HIGH_SURROGATE
 #define IS_HIGH_SURROGATE(wch) (((wch) >= HIGH_SURROGATE_START) && \
                                 ((wch) <= HIGH_SURROGATE_END))
 #define IS_LOW_SURROGATE(wch) (((wch) >= LOW_SURROGATE_START) && \

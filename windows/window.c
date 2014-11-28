@@ -1,4 +1,4 @@
-/*
+ï»¿/*
  * window.c - the PuTTY(tel) main program, which runs a PuTTY terminal
  * emulator and backend in a window.
  */
@@ -88,7 +88,7 @@ static void another_font(int);
 static void deinit_fonts(void);
 static void set_input_locale(HKL);
 static void update_savedsess_menu(void);
-static void init_flashwindow(void);
+static void init_winfuncs(void);
 
 static int is_full_screen(void);
 static void make_full_screen(void);
@@ -104,10 +104,6 @@ static int offset_width, offset_height;
 static int was_zoomed = 0;
 static int prev_rows, prev_cols;
   
-static int pending_netevent = 0;
-static WPARAM pend_netevent_wParam = 0;
-static LPARAM pend_netevent_lParam = 0;
-static void enact_pending_netevent(void);
 static void flash_window(int mode);
 static void sys_cursor_update(void);
 static int get_fullscreen_rect(RECT * ss);
@@ -121,7 +117,7 @@ static Backend *back;
 static void *backhandle;
 
 static struct unicode_data ucsdata;
-static int must_close_session, session_closed;
+static int session_closed;
 static int reconfiguring = FALSE;
 
 static const struct telnet_special *specials = NULL;
@@ -139,6 +135,12 @@ static struct {
 } popup_menus[2];
 enum { SYSMENU, CTXMENU };
 static HMENU savedsess_menu;
+
+struct wm_netevent_params {
+    /* Used to pass data to wm_netevent_callback */
+    WPARAM wParam;
+    LPARAM lParam;
+};
 
 Conf *conf;			       /* exported to windlg.c */
 
@@ -295,8 +297,11 @@ static UINT wm_mousewheel = WM_MOUSEWHEEL;
     (((wch) >= 0x180B && (wch) <= 0x180D) || /* MONGOLIAN FREE VARIATION SELECTOR */ \
      ((wch) >= 0xFE00 && (wch) <= 0xFE0F)) /* VARIATION SELECTOR 1-16 */
 
+const int share_can_be_downstream = TRUE;
+const int share_can_be_upstream = TRUE;
+
 /* Dummy routine, only required in plink. */
-void ldisc_update(void *frontend, int echo, int edit)
+void frontend_echoedit_update(void *frontend, int echo, int edit)
 {
 }
 
@@ -371,11 +376,10 @@ static void start_backend(void)
 	DeleteMenu(popup_menus[i].menu, IDM_RESTART, MF_BYCOMMAND);
     }
 
-    must_close_session = FALSE;
     session_closed = FALSE;
 }
 
-static void close_session(void)
+static void close_session(void *ignored_context)
 {
     char morestuff[100];
     int i;
@@ -406,15 +410,6 @@ static void close_session(void)
 	InsertMenu(popup_menus[i].menu, IDM_DUPSESS, MF_BYCOMMAND | MF_ENABLED,
 		   IDM_RESTART, "&Restart Session");
     }
-
-    /*
-     * Unset the 'must_close_session' flag, or else we'll come
-     * straight back here the next time we go round the main message
-     * loop - which, worse still, will be immediately (without
-     * blocking) because we've just triggered a WM_SETTEXT by the
-     * window title change above.
-     */
-    must_close_session = FALSE;
 }
 
 #ifdef CYGTERMPORT
@@ -474,7 +469,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 
     init_help();
 
-    init_flashwindow();
+    init_winfuncs();
 
     conf = conf_new();
 
@@ -850,8 +845,7 @@ InitWinMain();
 			    q += 2;
 			conf_set_int(conf, CONF_protocol, PROT_TELNET);
 			p = q;
-			while (*p && *p != ':' && *p != '/')
-			    p++;
+                        p += host_strcspn(p, ":/");
 			c = *p;
 			if (*p)
 			    *p++ = '\0';
@@ -1004,17 +998,17 @@ InitWinMain();
 		}
 	    }
 
-	    /*
+            /*
              * Trim a colon suffix off the hostname if it's there. In
-             * order to protect IPv6 address literals against this
-             * treatment, we do not do this if there's _more_ than one
-             * colon.
-	     */
+             * order to protect unbracketed IPv6 address literals
+             * against this treatment, we do not do this if there's
+             * _more_ than one colon.
+             */
             {
-                char *c = strchr(host, ':');
+                char *c = host_strchr(host, ':');
  
                 if (c) {
-                    char *d = strchr(c+1, ':');
+                    char *d = host_strchr(c+1, ':');
                     if (!d)
                         *c = '\0';
                 }
@@ -1067,7 +1061,7 @@ if( conf_get_int(conf,CONF_icone)/*cfg.icone*/ == 0 ) {
 	if( GetIconeFlag() > 0 ) 
 		wndclass.hIcon = LoadIcon( GethInstIcons(), MAKEINTRESOURCE(IDI_MAINICON_0 + GetIconeNum() ) );
 	else
-		wndclass.hIcon = LoadIcon(inst, MAKEINTRESOURCE(IDI_MAINICON));
+	wndclass.hIcon = LoadIcon(inst, MAKEINTRESOURCE(IDI_MAINICON));
 #else
 	wndclass.hIcon = LoadIcon(inst, MAKEINTRESOURCE(IDI_MAINICON));
 #endif
@@ -1437,8 +1431,8 @@ ManagePortKnocking(conf_get_str(conf,CONF_host),conf_get_str(conf,CONF_portknock
 	 * Hyperlink stuff: Set the regular expression
 	 */
 	if( !PuttyFlag && HyperlinkFlag ) {
-		if( strlen( conf_get_str(conf,CONF_url_regex))==0 ) { conf_set_str(conf,CONF_url_regex,"@°@°@NO REGEX--") ; }
-		if( strlen( conf_get_str(term->conf,CONF_url_regex))==0 ) { conf_set_str(term->conf,CONF_url_regex,"@°@°@NO REGEX--") ; }
+		if( strlen( conf_get_str(conf,CONF_url_regex))==0 ) { conf_set_str(conf,CONF_url_regex,"@ï¿½@ï¿½@NO REGEX--") ; }
+		if( strlen( conf_get_str(term->conf,CONF_url_regex))==0 ) { conf_set_str(term->conf,CONF_url_regex,"@ï¿½@ï¿½@NO REGEX--") ; }
 		
 		if( conf_get_int(term->conf,CONF_url_defregex) != 0 ) {
 			urlhack_set_regular_expression(URLHACK_REGEX_CLASSIC, conf_get_str(term->conf,CONF_url_regex) ) ;
@@ -1475,11 +1469,38 @@ ManagePortKnocking(conf_get_str(conf,CONF_host),conf_get_str(conf,CONF_portknock
     while (1) {
 	HANDLE *handles;
 	int nhandles, n;
+        DWORD timeout;
+
+        if (toplevel_callback_pending() ||
+            PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE)) {
+            /*
+             * If we have anything we'd like to do immediately, set
+             * the timeout for MsgWaitForMultipleObjects to zero so
+             * that we'll only do a quick check of our handles and
+             * then get on with whatever that was.
+             *
+             * One such option is a pending toplevel callback. The
+             * other is a non-empty Windows message queue, which you'd
+             * think we could leave to MsgWaitForMultipleObjects to
+             * check for us along with all the handles, but in fact we
+             * can't because once PeekMessage in one iteration of this
+             * loop has removed a message from the queue, the whole
+             * queue is considered uninteresting by the next
+             * invocation of MWFMO. So we check ourselves whether the
+             * message queue is non-empty, and if so, set this timeout
+             * to zero to ensure MWFMO doesn't block.
+             */
+            timeout = 0;
+        } else {
+            timeout = INFINITE;
+            /* The messages seem unreliable; especially if we're being tricky */
+            term_set_focus(term, GetForegroundWindow() == hwnd);
+        }
 
 	handles = handle_get_events(&nhandles);
 
-	n = MsgWaitForMultipleObjects(nhandles, handles, FALSE, INFINITE,
-				      QS_ALLINPUT);
+	n = MsgWaitForMultipleObjects(nhandles, handles, FALSE,
+                                      timeout, QS_ALLINPUT);
 
 	if ((unsigned)(n - WAIT_OBJECT_0) < (unsigned)nhandles) {
 	    handle_got_event(handles[n - WAIT_OBJECT_0]);
@@ -1496,7 +1517,7 @@ ManagePortKnocking(conf_get_str(conf,CONF_host),conf_get_str(conf,CONF_portknock
 	} else
 	    sfree(handles);
 
-	while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+	if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) { // was 'while', not 'if' in kitty
 	    if (msg.message == WM_QUIT)
 		goto finished;	       /* two-level break */
 
@@ -1519,10 +1540,13 @@ ManagePortKnocking(conf_get_str(conf,CONF_host),conf_get_str(conf,CONF_portknock
 		close_session();
 #endif
 	}
+
 	/* The messages seem unreliable; especially if we're being tricky */
 	term_set_focus(term, GetForegroundWindow() == hwnd);
+
 	if (pending_netevent)
 	    enact_pending_netevent();
+
 	net_pending_errors();
     }
 
@@ -1810,7 +1834,7 @@ void connection_fatal(void *frontend, char *fmt, ...)
  		sprintf(morestuff, "%.70s Fatal Error", appname);
  		MessageBox(hwnd, stuff, morestuff, MB_ICONERROR | MB_OK);
  		sfree(stuff);
- 
+
  		if ( conf_get_int(conf,CONF_close_on_exit)/*cfg.close_on_exit*/ == FORCE_ON)
  		PostQuitMessage(1);
  		else {
@@ -1828,7 +1852,7 @@ void connection_fatal(void *frontend, char *fmt, ...)
     if (conf_get_int(conf, CONF_close_on_exit) == FORCE_ON)
 	PostQuitMessage(1);
     else {
-	must_close_session = TRUE;
+	queue_toplevel_callback(close_session, NULL);
     }
 #endif
 }
@@ -1853,7 +1877,7 @@ void cmdline_error(char *fmt, ...)
 /*
  * Actually do the job requested by a WM_NETEVENT
  */
-static void enact_pending_netevent(void)
+static void wm_netevent_callback(void *vctx)
 {
     static int reentering = 0;
     extern int select_result(WPARAM, LPARAM);
@@ -1864,9 +1888,7 @@ static void enact_pending_netevent(void)
     pending_netevent = FALSE;
 
     reentering = 1;
-
     select_result(pend_netevent_wParam, pend_netevent_lParam);
-
     reentering = 0;
 }
 
@@ -2723,7 +2745,7 @@ static int is_alt_pressed(void)
 }
 
 #if (!defined IMAGEPORT) || (defined FDJ)
-static int resizing ;
+static int resizing;
 #endif
 #ifdef PERSOPORT
 struct ctrl_tab_info {
@@ -2783,7 +2805,7 @@ void notify_remote_exit(void *fe)
 	    (close_on_exit == AUTO && exitcode != INT_MAX)) {
 	    PostQuitMessage(0);
 	} else {
-	    must_close_session = TRUE;
+            queue_toplevel_callback(close_session, NULL);
 	    session_closed = TRUE;
 	    /* exitcode == INT_MAX indicates that the connection was closed
 	     * by a fatal error, so an error box will be coming our way and
@@ -3242,7 +3264,7 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 		if (!reconfig_result) {
                     conf_free(prev_conf);
 		    break;
-		}
+                }
 #ifdef PERSOPORT
 		SaveRegistryKey() ;
 #endif
@@ -3296,9 +3318,10 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 		 * Flush the line discipline's edit buffer in the
 		 * case where local editing has just been disabled.
 		 */
+		if (ldisc) {
 		ldisc_configure(ldisc, conf);
-		if (ldisc)
-		    ldisc_send(ldisc, NULL, 0, 0);
+		    ldisc_echoedit_update(ldisc);
+                }
 		if (pal)
 		    DeleteObject(pal);
 		logpal = NULL;
@@ -3474,7 +3497,7 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 	  case IDM_RESET:
 	    term_pwron(term, TRUE);
 	    if (ldisc)
-		ldisc_send(ldisc, NULL, 0, 0);
+		ldisc_echoedit_update(ldisc);
 	    break;
 	  case IDM_ABOUT:
 	    showabout(hwnd);
@@ -3652,11 +3675,10 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 		    break;
 		if (back)
 		    back->special(backhandle, specials[i].code);
-		net_pending_errors();
 	    }
 	}
 	break;
-	
+
 #ifdef PERSOPORT
 	case WM_DROPFILES: {
         	OnDropFiles(hwnd, (HDROP) wParam);
@@ -3969,12 +3991,12 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
         }
 	}
 	else {
-		HideCaret(hwnd);
-		hdc = BeginPaint(hwnd, &p);
-		if (pal) {
-			SelectPalette(hdc, pal, TRUE);
-			RealizePalette(hdc);
-		}
+	    HideCaret(hwnd);
+	    hdc = BeginPaint(hwnd, &p);
+	    if (pal) {
+		SelectPalette(hdc, pal, TRUE);
+		RealizePalette(hdc);
+	    }
 	}
 #else
 
@@ -4114,20 +4136,20 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 	}
 	return 0;
       case WM_NETEVENT:
-	/* Notice we can get multiple netevents, FD_READ, FD_WRITE etc
-	 * but the only one that's likely to try to overload us is FD_READ.
-	 * This means buffering just one is fine.
+        {
+            /*
+             * To protect against re-entrancy when Windows's recv()
+             * immediately triggers a new WSAAsyncSelect window
+             * message, we don't call select_result directly from this
+             * handler but instead wait until we're back out at the
+             * top level of the message loop.
 	 */
-	if (pending_netevent)
-	    enact_pending_netevent();
-
-	pending_netevent = TRUE;
-	pend_netevent_wParam = wParam;
-	pend_netevent_lParam = lParam;
-	if (WSAGETSELECTEVENT(lParam) != FD_READ)
-	    enact_pending_netevent();
-
-	net_pending_errors();
+            struct wm_netevent_params *params =
+                snew(struct wm_netevent_params);
+            params->wParam = wParam;
+            params->lParam = lParam;
+            queue_toplevel_callback(wm_netevent_callback, params);
+        }
 	return 0;
       case WM_SETFOCUS:
 #ifdef PERSOPORT
@@ -4670,14 +4692,6 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 
 		if (len != 0) {
 		    /*
-		     * Interrupt an ongoing paste. I'm not sure
-		     * this is sensible, but for the moment it's
-		     * preferable to having to faff about buffering
-		     * things.
-		     */
-		    term_nopaste(term);
-
-		    /*
 		     * We need not bother about stdin backlogs
 		     * here, because in GUI PuTTY we can't do
 		     * anything about it anyway; there's no means
@@ -5018,7 +5032,7 @@ void do_text_internal(Context ctx, int x, int y, wchar_t *text, int len,
 	attr |= (260 << ATTR_FGSHIFT) | (261 << ATTR_BGSHIFT);
         is_cursor = TRUE;
     }
-    
+
 #ifdef TUTTYPORT
     if (!conf_get_int(conf,CONF_sel_colour) && (attr & ATTR_SELECTED)) {
 	attr &= ~ATTR_SELECTED;
@@ -5683,6 +5697,17 @@ int char_width(Context ctx, int uc) {
     ibuf /= font_width;
 
     return ibuf;
+}
+
+DECL_WINDOWS_FUNCTION(static, BOOL, FlashWindowEx, (PFLASHWINFO));
+DECL_WINDOWS_FUNCTION(static, BOOL, ToUnicodeEx,
+                      (UINT, UINT, const BYTE *, LPWSTR, int, UINT, HKL));
+
+static void init_winfuncs(void)
+{
+    HMODULE user32_module = load_system32_dll("user32.dll");
+    GET_WINDOWS_FUNCTION(user32_module, FlashWindowEx);
+    GET_WINDOWS_FUNCTION(user32_module, ToUnicodeEx);
 }
 
 /*
@@ -6442,8 +6467,8 @@ static int TranslateKey(UINT message, WPARAM wParam, LPARAM lParam,
 	/* XXX how do we know what the max size of the keys array should
 	 * be is? There's indication on MS' website of an Inquire/InquireEx
 	 * functioning returning a KBINFO structure which tells us. */
-	if (osVersion.dwPlatformId == VER_PLATFORM_WIN32_NT) {
-	    r = ToUnicodeEx(wParam, scan, keystate, keys_unicode,
+	if (osVersion.dwPlatformId == VER_PLATFORM_WIN32_NT && p_ToUnicodeEx) {
+	    r = p_ToUnicodeEx(wParam, scan, keystate, keys_unicode,
                             lenof(keys_unicode), 0, kbd_layout);
 	} else {
 	    /* XXX 'keys' parameter is declared in MSDN documentation as
@@ -6489,13 +6514,6 @@ static int TranslateKey(UINT message, WPARAM wParam, LPARAM lParam,
 #endif
 	if (r > 0) {
 	    WCHAR keybuf;
-
-	    /*
-	     * Interrupt an ongoing paste. I'm not sure this is
-	     * sensible, but for the moment it's preferable to
-	     * having to faff about buffering things.
-	     */
-	    term_nopaste(term);
 
 	    p = output;
 	    for (i = 0; i < r; i++) {
@@ -7428,14 +7446,6 @@ void nonfatal(char *fmt, ...)
     sprintf(morestuff, "%.70s Error", appname);
     MessageBox(hwnd, stuff, morestuff, MB_ICONERROR | MB_OK);
     sfree(stuff);
-}
-
-DECL_WINDOWS_FUNCTION(static, BOOL, FlashWindowEx, (PFLASHWINFO));
-
-static void init_flashwindow(void)
-{
-    HMODULE user32_module = load_system32_dll("user32.dll");
-    GET_WINDOWS_FUNCTION(user32_module, FlashWindowEx);
 }
 
 static BOOL flash_window_ex(DWORD dwFlags, UINT uCount, DWORD dwTimeout)
