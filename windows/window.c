@@ -1821,10 +1821,15 @@ void connection_fatal(void *frontend, char *fmt, ...)
     va_start(ap, fmt);
     stuff = dupvprintf(fmt, ap);
     va_end(ap);
-    sprintf(morestuff, "%.70s Fatal Error", appname);
+	sprintf(morestuff, "%.70s Fatal Error", appname);
+#ifdef NO_FAIL_MESSAGEBOX
+	// NIXIN: removed messagebox, instead opens eventlog
+	// cause eventlog doesn't steal focus (possible to close the app from tray)
+	showeventlog(hwnd);
+#else
     MessageBox(hwnd, stuff, morestuff, MB_ICONERROR | MB_OK);
+#endif
     sfree(stuff);
-
     if (conf_get_int(conf, CONF_close_on_exit) == FORCE_ON)
 	PostQuitMessage(1);
     else {
@@ -7370,9 +7375,12 @@ void fatalbox(char *fmt, ...)
     stuff = dupvprintf(fmt, ap);
     va_end(ap);
     sprintf(morestuff, "%.70s Fatal Error", appname);
-    // NIXIN: removed messagebox, instead opens eventlog
-    showeventlog(hwnd);
-    //MessageBox(hwnd, stuff, morestuff, MB_ICONERROR | MB_OK);
+#ifdef NO_FAIL_MESSAGEBOX
+	// NIXIN: removed messagebox, instead opens eventlog
+	showeventlog(hwnd);
+#else
+	MessageBox(hwnd, stuff, morestuff, MB_ICONERROR | MB_OK);
+#endif // NO_FAIL_MESSAGEBOX
     sfree(stuff);
     cleanup_exit(1);
 }
