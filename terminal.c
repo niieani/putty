@@ -26,7 +26,7 @@ int get_param( const char * val ) ;
 /*
  * HACK: PuttyTray / Nutty
  */ 
-#include "urlhack.h"
+#include "../url/urlhack.h"
 #endif
 #ifdef ZMODEMPORT
 int xyz_ReceiveData(Terminal *term, const u_char *buffer, int len);

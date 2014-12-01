@@ -10,8 +10,8 @@
 #include "storage.h"
 
 #ifdef SCPORT
-#include "pkcs11.h"
-#include "sc.h"
+#include "../sc/pkcs11.h"
+#include "../sc/sc.h"
 void sc_conf_filesel_handler11(union control *ctrl, void *dlg, void *data, int event) ;
 #endif
 #ifdef CYGTERMPORT

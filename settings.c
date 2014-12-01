@@ -9,7 +9,7 @@
 #include "storage.h"
 
 #ifdef HYPERLINKPORT
-#include "urlhack.h"
+#include "../url/urlhack.h"
 #endif
 
 #ifdef PERSOPORT

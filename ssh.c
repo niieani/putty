@@ -14,8 +14,8 @@
 #include "ssh.h"
 
 #ifdef SCPORT
-#include "pkcs11.h"
-#include "sc.h"
+#include "../sc/pkcs11.h"
+#include "../sc/sc.h"
 #endif
 
 #ifndef NO_GSSAPI

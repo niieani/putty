@@ -202,7 +202,7 @@ static RGBTRIPLE defpal[NALLCOLOURS];
 static HBITMAP caretbm;
 
 #ifdef HYPERLINKPORT
-#include "urlhack.h"
+#include "../../url/urlhack.h"
 static int urlhack_cursor_is_hand = 0;
 void urlhack_enable(void);
 #endif
@@ -1791,7 +1791,7 @@ void connection_fatal(void *frontend, char *fmt, ...)
 #ifdef RECONNECTPORT
 	if ( conf_get_int(conf,CONF_failure_reconnect)/*cfg.failure_reconnect*/) {
  		time_t tnow = time(NULL);
- 		close_session();
+ 		//close_session(); TODO: check what to put here
  
  		if(last_reconnect && (tnow - last_reconnect) < GetReconnectDelay() ) {
  			Sleep(1000);
@@ -1808,13 +1808,19 @@ void connection_fatal(void *frontend, char *fmt, ...)
 		stuff = dupvprintf(fmt, ap);
  		va_end(ap);
  		sprintf(morestuff, "%.70s Fatal Error", appname);
- 		MessageBox(hwnd, stuff, morestuff, MB_ICONERROR | MB_OK);
+#ifdef NO_FAIL_MESSAGEBOX
+		// NIXIN: removed messagebox, instead opens eventlog
+		// cause eventlog doesn't steal focus (possible to close the app from tray)
+		showeventlog(hwnd);
+#else
+		MessageBox(hwnd, stuff, morestuff, MB_ICONERROR | MB_OK);
+#endif
  		sfree(stuff);
 
  		if ( conf_get_int(conf,CONF_close_on_exit)/*cfg.close_on_exit*/ == FORCE_ON)
  		PostQuitMessage(1);
  		else {
- 		must_close_session = TRUE;
+		queue_toplevel_callback(close_session, NULL);
  		}
  	}
 #else
@@ -4817,7 +4823,8 @@ else if((UINT_PTR)wParam == TIMER_LOGROTATION) {  // log rotation
 			case PBT_APMSUSPEND:
 				if(!session_closed && back) {
 					logevent(NULL, "Suspend detected, disconnecting cleanly...");
-					close_session();
+					// TODO: close properly
+					//close_session();
 				}
 				break;
 		}

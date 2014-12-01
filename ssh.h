@@ -8,7 +8,7 @@
 #include "misc.h"
 
 #ifdef SCPORT
-#include "pkcs11.h"
+#include "../sc/pkcs11.h"
 #endif
 
 struct ssh_channel;
