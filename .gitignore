@@ -138,3 +138,5 @@
 /windows/.bmake
 /windows/*.sln
 /windows/*.suo
+# for now, don't track the VS2015 repo
+/windows/VS2015
